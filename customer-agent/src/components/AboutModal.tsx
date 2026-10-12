@@ -22,12 +22,12 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
         <div className="flex items-center justify-between pb-4 border-b border-border">
           <div className="flex items-center gap-3">
             <img
-              src="/octapus-logo.jpg"
-              alt="Octapus Logo"
-              className="w-10 h-10 rounded-xl object-cover shadow-sm"
+              src="/horus.jpg"
+              alt="HORUS Logo"
+              className="w-10 h-10 rounded-xl object-cover shadow-sm ring-1 ring-sky-400/50 shadow-sky-500/20"
             />
             <div>
-              <h3 className="font-semibold text-lg text-foreground">Octapus LLC</h3>
+              <h3 className="font-bold text-lg text-foreground font-outfit tracking-wide">HORUS • Octapus</h3>
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <MapPin className="w-3 h-3 text-sky-500" /> Dubai, United Arab Emirates
               </p>

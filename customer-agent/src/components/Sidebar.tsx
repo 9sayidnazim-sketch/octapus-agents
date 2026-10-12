@@ -40,13 +40,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-4 flex items-center justify-between border-b border-border/60">
           <div className="flex items-center gap-3">
             <img
-              src="/octapus-logo.jpg"
-              alt="Octapus Mascot"
-              className="w-8 h-8 rounded-xl object-cover shadow-sm ring-1 ring-border"
+              src="/horus.jpg"
+              alt="HORUS Mascot"
+              className="w-8 h-8 rounded-xl object-cover shadow-sm ring-1 ring-sky-400/50 shadow-sky-500/20"
             />
             <div>
-              <span className="font-semibold text-sm text-foreground">Octapus LLC</span>
-              <p className="text-[10px] text-muted-foreground">Dubai Digital Partner</p>
+              <span className="font-bold text-sm text-foreground font-outfit tracking-wider">HORUS</span>
+              <p className="text-[10px] text-sky-500 font-medium">by Octapus LLC • Dubai</p>
             </div>
           </div>
           <Button

@@ -124,16 +124,19 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
 
   return (
     <div className="flex items-start gap-3 sm:gap-4 w-full animate-in fade-in duration-200">
-      {/* Octapus Coordinator Mascot Avatar */}
+      {/* HORUS Mascot Avatar */}
       <img
-        src="/octapus-logo.jpg"
-        alt="Octapus Coordinator"
-        className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl object-cover shrink-0 shadow-sm ring-1 ring-border mt-1"
+        src="/horus.jpg"
+        alt="Horus Coordinator"
+        className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl object-cover shrink-0 shadow-sm ring-1 ring-sky-400/50 shadow-sky-500/20 mt-1"
       />
 
       <div className="flex-1 max-w-[calc(100%-48px)]">
         <div className="flex items-center gap-2 mb-1">
-          <span className="font-semibold text-xs sm:text-sm text-foreground">Octapus Coordinator</span>
+          <span className="font-bold text-xs sm:text-sm text-foreground font-outfit tracking-wide">Horus</span>
+          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20 uppercase">
+            AI Coordinator
+          </span>
           <span className="text-[11px] text-muted-foreground">{message.timestamp}</span>
         </div>
 

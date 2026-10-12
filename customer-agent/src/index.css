@@ -2,7 +2,7 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
+    --background: 210 33% 99%;
     --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
@@ -11,7 +11,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    --primary: 217 91% 60%;
+    --primary: 199 89% 48%;
     --primary-foreground: 210 40% 98%;
 
     --secondary: 210 40% 96.1%;
@@ -28,38 +28,66 @@
 
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --ring: 199 89% 48%;
 
-    --radius: 0.75rem;
+    --radius: 1rem;
   }
 
   .dark {
-    --background: 224 71% 4%;
-    --foreground: 213 31% 91%;
+    --background: 224 71% 3%;
+    --foreground: 213 31% 94%;
 
-    --card: 224 71% 6%;
-    --card-foreground: 213 31% 91%;
+    --card: 224 65% 5.5%;
+    --card-foreground: 213 31% 94%;
 
-    --popover: 224 71% 6%;
-    --popover-foreground: 213 31% 91%;
+    --popover: 224 65% 5.5%;
+    --popover-foreground: 213 31% 94%;
 
-    --primary: 217 91% 60%;
+    --primary: 199 89% 48%;
     --primary-foreground: 222 47% 11.2%;
 
-    --secondary: 222 47% 11%;
+    --secondary: 222 47% 9%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 223 47% 11%;
-    --muted-foreground: 215.4 16.3% 56.9%;
+    --muted: 223 47% 12%;
+    --muted-foreground: 215.4 16.3% 62%;
 
-    --accent: 216 34% 17%;
+    --accent: 216 34% 14%;
     --accent-foreground: 210 40% 98%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 216 34% 17%;
-    --input: 216 34% 17%;
-    --ring: 224 76% 48%;
+    --border: 216 34% 15%;
+    --input: 216 34% 15%;
+    --ring: 199 89% 48%;
   }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+.font-outfit {
+  font-family: 'Outfit', sans-serif;
+}
+
+/* Custom delicate scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
 }

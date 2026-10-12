@@ -155,15 +155,15 @@ export default function App() {
               {loading && (
                 <div className="flex items-start gap-3 sm:gap-4 w-full animate-in fade-in duration-200">
                   <img
-                    src="/octapus-logo.jpg"
-                    alt="Octapus Mascot"
-                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl object-cover shrink-0 shadow-sm ring-1 ring-border mt-1"
+                    src="/horus.jpg"
+                    alt="Horus Mascot"
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl object-cover shrink-0 shadow-sm ring-1 ring-sky-400/50 shadow-sky-500/20 mt-1"
                   />
                   <div className="rounded-3xl rounded-tl-md px-5 py-3.5 bg-card border border-border/70 shadow-sm flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
                     <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse [animation-delay:0.2s]" />
                     <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse [animation-delay:0.4s]" />
-                    <span className="text-xs text-muted-foreground ml-2">Octapus Coordinator is preparing a response...</span>
+                    <span className="text-xs text-muted-foreground ml-2">Horus is preparing a response...</span>
                   </div>
                 </div>
               )}

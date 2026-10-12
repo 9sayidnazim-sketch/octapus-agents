@@ -20,7 +20,9 @@ const buttonVariants = cva(
         link:
           "text-primary underline-offset-4 hover:underline",
         octapus:
-          "bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 hover:brightness-105 active:scale-[0.98]",
+          "bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 text-white shadow-md shadow-sky-500/25 hover:shadow-lg hover:shadow-sky-500/35 hover:brightness-105 active:scale-[0.98]",
+        capsule:
+          "bg-gradient-to-r from-[#38bdf8] via-[#0ea5e9] to-[#0284c7] text-white shadow-[0_4px_16px_rgba(14,165,233,0.4)] hover:shadow-[0_6px_22px_rgba(14,165,233,0.6)] hover:brightness-105 active:scale-95 rounded-full font-semibold",
         subtle:
           "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-[0.98]",
       },
@@ -29,6 +31,7 @@ const buttonVariants = cva(
         sm: "h-8 rounded-lg px-3 text-xs",
         lg: "h-12 rounded-2xl px-6 text-base",
         icon: "h-9 w-9 rounded-full",
+        capsule: "h-10 px-5 sm:px-6 rounded-full",
       },
     },
     defaultVariants: {

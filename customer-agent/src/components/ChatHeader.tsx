@@ -31,23 +31,26 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         </Button>
 
         <div className="flex items-center gap-3">
-          <img
-            src="/octapus-logo.jpg"
-            alt="Octapus Logo"
-            className="w-9 h-9 rounded-2xl object-cover shadow-sm ring-1 ring-border"
-          />
+          <div className="relative">
+            <img
+              src="/horus.jpg"
+              alt="HORUS Avatar"
+              className="w-9 h-9 rounded-2xl object-cover shadow-sm ring-1 ring-sky-400/50 shadow-sky-500/20"
+            />
+            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
+          </div>
+
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-semibold text-sm sm:text-base text-foreground leading-tight">
-                Octapus Coordinator
+              <h2 className="font-bold text-sm sm:text-base text-foreground leading-tight tracking-wide font-outfit">
+                HORUS
               </h2>
-              <span className="hidden sm:inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20">
-                Official
+              <span className="hidden sm:inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20 uppercase tracking-wider">
+                Coordinator
               </span>
             </div>
             <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 leading-tight">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>Online • Dubai, UAE</span>
+              <span>by Octapus • Dubai, UAE</span>
             </p>
           </div>
         </div>
@@ -58,7 +61,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           variant="ghost"
           size="icon"
           onClick={onOpenAbout}
-          title="About Octapus"
+          title="About HORUS & Octapus"
           aria-label="About Octapus"
           className="text-muted-foreground hover:text-foreground"
         >
