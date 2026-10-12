@@ -42,15 +42,31 @@ export default function App() {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
-  const handleSend = async (textToSend?: string) => {
-    const query = (textToSend || input).trim();
-    if (!query || loading) return;
+  const handleSend = async (
+    textToSend?: string,
+    imageUrl?: string,
+    audioUrl?: string,
+    audioDuration?: string
+  ) => {
+    const rawQuery = (textToSend !== undefined ? textToSend : input).trim();
+    const query =
+      rawQuery ||
+      (imageUrl
+        ? "I have attached a project image for review. Can you provide information on what Octapus can build?"
+        : audioUrl
+        ? `Voice message (${audioDuration || "Audio"})`
+        : "");
+    if (!query && !imageUrl && !audioUrl) return;
+    if (loading) return;
 
     const userMsg: Message = {
       id: crypto.randomUUID(),
       sender: "user",
-      text: query,
+      text: rawQuery || (imageUrl ? "Attached project visual" : audioUrl ? "Sent a voice note" : ""),
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      imageUrl,
+      audioUrl,
+      audioDuration,
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -58,8 +74,9 @@ export default function App() {
     setLoading(true);
 
     // Save recent topic
+    const topicSnippet = rawQuery || (imageUrl ? "Visual project requirement" : "Voice note consultation");
     setRecentTopics((prev) => {
-      const updated = [query, ...prev.filter((t) => t !== query)].slice(0, 15);
+      const updated = [topicSnippet, ...prev.filter((t) => t !== topicSnippet)].slice(0, 15);
       localStorage.setItem("octapus_recent_topics", JSON.stringify(updated));
       return updated;
     });
@@ -175,7 +192,7 @@ export default function App() {
         <ChatInput
           value={input}
           onChange={setInput}
-          onSend={() => handleSend()}
+          onSend={(txt, img, aud, dur) => handleSend(txt, img, aud, dur)}
           isLoading={loading}
         />
       </div>
