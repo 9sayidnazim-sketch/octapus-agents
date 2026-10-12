@@ -79,8 +79,13 @@ def horus_logo():
 
 from typing import Optional
 
-# In-memory store. Replace with a database (Redis, Postgres) in production.
-sessions: dict[str, list[dict]] = {}
+try:
+    from . import db
+except ImportError:
+    import db
+
+# Initialize SQLite database
+db.init_db()
 
 
 class ChatIn(BaseModel):
@@ -95,7 +100,12 @@ class ChatOut(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "app": "octapus-customer-agent", "model": MODEL}
+    return {
+        "status": "ok",
+        "app": "octapus-customer-agent",
+        "model": MODEL,
+        "database": db.get_db_stats(),
+    }
 
 
 @app.get("/")
@@ -106,8 +116,8 @@ def index():
 @app.post("/chat/reset")
 def reset_chat(body: dict):
     s_id = body.get("session_id")
-    if s_id and s_id in sessions:
-        sessions.pop(s_id, None)
+    if s_id:
+        db.clear_session(s_id)
     return {"status": "cleared"}
 
 
@@ -118,8 +128,10 @@ def chat(body: ChatIn):
         raise HTTPException(status_code=400, detail="Message must be 1-2000 characters.")
 
     session_id = body.session_id or str(uuid.uuid4())
-    history = sessions.setdefault(session_id, [])
-    history.append({"role": "user", "content": message})
+
+    # Save user message to persistent SQLite database
+    db.save_message(session_id=session_id, role="user", content=message)
+    history = db.get_history(session_id, limit=MAX_TURNS)
 
     try:
         client = get_client()
@@ -127,12 +139,29 @@ def chat(body: ChatIn):
             model=MODEL,
             max_tokens=1000,
             system=SYSTEM_PROMPT,
-            messages=history[-MAX_TURNS:],
+            messages=history,
         )
     except anthropic.APIError:
-        history.pop()  # keep history consistent after a failed call
+        db.delete_last_message(session_id)  # rollback on failure
         raise HTTPException(status_code=502, detail="The assistant is unavailable right now.")
 
     reply = "".join(b.text for b in response.content if b.type == "text")
-    history.append({"role": "assistant", "content": reply})
+    # Save assistant reply to persistent SQLite database
+    db.save_message(session_id=session_id, role="assistant", content=reply)
     return ChatOut(reply=reply, session_id=session_id)
+
+
+@app.get("/sessions")
+def get_sessions(limit: int = 50):
+    return {"sessions": db.list_sessions(limit=limit)}
+
+
+@app.get("/sessions/{session_id}/messages")
+def get_session_messages(session_id: str, limit: int = 50):
+    return {"session_id": session_id, "messages": db.get_history(session_id, limit=limit)}
+
+
+@app.get("/db/stats")
+def get_database_stats():
+    return db.get_db_stats()
+

@@ -12,12 +12,25 @@ const AGENT_URL = process.env.AGENT_URL || "http://localhost:8000/chat";
 const PORT = process.env.BRIDGE_PORT || 3000;
 
 // Health check endpoint
-app.get("/health", (req, res) => {
+app.get("/health", async (req, res) => {
+  let dbInfo = null;
+  try {
+    const healthUrl = AGENT_URL.replace("/chat", "/health");
+    const agentRes = await fetch(healthUrl);
+    if (agentRes.ok) {
+      const data = await agentRes.json();
+      dbInfo = data.database;
+    }
+  } catch (err) {
+    dbInfo = { status: "agent_offline", error: err.message };
+  }
+
   res.json({
     status: "ok",
     service: "octapus-whatsapp-bridge",
     gateway: GATEWAY,
     agent: AGENT_URL,
+    database: dbInfo || { status: "connected", engine: "sqlite" },
     timestamp: new Date().toISOString(),
   });
 });
