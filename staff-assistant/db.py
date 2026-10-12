@@ -29,6 +29,8 @@ def get_db_path() -> Path:
         return Path(db_url.replace("sqlite:///", ""))
     if db_url and not db_url.startswith("sqlite://"):
         return Path(db_url)
+    if os.environ.get("VERCEL") or not os.access(BASE_DIR, os.W_OK):
+        return Path("/tmp/staff_assistant.db")
     return DEFAULT_DB_PATH
 
 
