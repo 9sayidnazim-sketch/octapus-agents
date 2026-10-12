@@ -7,6 +7,13 @@
     "dev:all": "python3 run_dev.py --app all",
     "dev:customer": "python3 run_dev.py --app customer",
     "dev:staff": "python3 run_dev.py --app staff",
-    "build:customer": "cd customer-agent && npm run build"
+    "build:customer": "cd customer-agent && npm run build",
+    "bridge": "node whatsapp-bridge.js",
+    "dev:bridge": "node whatsapp-bridge.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0"
   }
 }

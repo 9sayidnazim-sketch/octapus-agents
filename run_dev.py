@@ -18,12 +18,13 @@ def run():
     parser = argparse.ArgumentParser(description="Octapus Agents Dev Server Runner")
     parser.add_argument(
         "--app",
-        choices=["all", "customer", "staff"],
+        choices=["all", "customer", "staff", "bridge"],
         default="all",
         help="Which agent to run (default: all)",
     )
     parser.add_argument("--customer-port", type=int, default=8000, help="Port for customer agent")
     parser.add_argument("--staff-port", type=int, default=8001, help="Port for staff assistant")
+    parser.add_argument("--with-bridge", action="store_true", help="Also start WhatsApp Orbit bridge on port 3000")
     args = parser.parse_args()
 
     procs = []
@@ -51,6 +52,12 @@ def run():
         p = subprocess.Popen(cmd, cwd=str(ROOT / "staff-assistant"))
         procs.append(p)
         print(f"🔒 Staff Assistant running at: http://localhost:{args.staff_port}")
+
+    if args.app == "bridge" or args.with_bridge:
+        cmd = ["node", "whatsapp-bridge.js"]
+        p = subprocess.Popen(cmd, cwd=str(ROOT))
+        procs.append(p)
+        print("📲 WhatsApp / Orbit Gateway Bridge running at: http://localhost:3000")
 
     print("Press Ctrl+C to stop.\n")
 
