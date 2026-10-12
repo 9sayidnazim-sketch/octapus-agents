@@ -1,0 +1,11 @@
+{
+  "name": "octapus-agents",
+  "version": "1.0.0",
+  "description": "Octapus Customer Agent and Staff Assistant",
+  "scripts": {
+    "dev": "python3 run_dev.py",
+    "dev:all": "python3 run_dev.py --app all",
+    "dev:customer": "python3 run_dev.py --app customer",
+    "dev:staff": "python3 run_dev.py --app staff"
+  }
+}

@@ -1,0 +1,14 @@
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.DS_Store
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+.pytest_cache/
+node_modules/
+
