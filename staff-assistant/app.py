@@ -422,7 +422,7 @@ def get_aggregated_models(x_staff_password: Optional[str] = Header(default=None)
 
     return {
         "models": all_models,
-        "default_model": get_setting("models", {}).get("default_model", ""),
+        "default_model": get_setting("models", {}).get("default_model") or "claude-sonnet-5-5",
         "default_provider": get_setting("models", {}).get("default_provider", "anthropic"),
     }
 
@@ -783,10 +783,8 @@ def chat_endpoint(
 
     # 3. Resolve Provider and Model
     model_settings = get_setting("models", {}) or {}
-    provider_name = model_settings.get("default_provider", "anthropic")
-    model_name = (model_settings.get("default_model") or "").strip()
-    if not model_name:
-        raise HTTPException(status_code=400, detail="Enter a model name in Settings > Models and save before chatting.")
+    provider_name = body.provider or (conv.get("provider") if conv else None) or model_settings.get("default_provider", "anthropic")
+    model_name = body.model or (conv.get("model") if conv else None) or (model_settings.get("default_model") or "").strip() or "claude-sonnet-5-5"
 
     # Update conversation model metadata if changed
     update_conversation(conv_id, provider=provider_name, model=model_name)

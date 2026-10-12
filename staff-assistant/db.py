@@ -147,7 +147,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     },
     "models": {
         "default_provider": "anthropic",
-        "default_model": "",
+        "default_model": "claude-sonnet-5-5",
         "temperature": 0.7,
         "max_output_tokens": 1200,
         "top_p": 1.0,

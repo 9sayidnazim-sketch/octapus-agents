@@ -1,73 +1,1035 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Octapus Assistant</title>
-<style>
-  body { font-family: system-ui, sans-serif; background: #f4f5f7; margin: 0; }
-  #chat { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px;
-          box-shadow: 0 2px 10px rgba(0,0,0,.1); display: flex; flex-direction: column; height: 80vh; }
-  #log { flex: 1; overflow-y: auto; padding: 16px; }
-  .msg { margin: 8px 0; padding: 10px 14px; border-radius: 10px; max-width: 80%; white-space: pre-wrap; }
-  .user { background: #2563eb; color: #fff; margin-left: auto; }
-  .bot  { background: #e5e7eb; color: #111; }
-  form { display: flex; padding: 12px; border-top: 1px solid #ddd; }
-  input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
-  button { margin-left: 8px; padding: 10px 16px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
-  button:disabled { opacity: .5; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0B0F19">
+  <title>Octapus AI | Customer Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      
+      --color-primary: #6366f1;
+      --color-primary-hover: #4f46e5;
+      --color-accent: #06b6d4;
+      --color-gradient: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+      --color-gradient-hover: linear-gradient(135deg, #4f46e5 0%, #0891b2 100%);
+      
+      --bg-page: #0b0f19;
+      --bg-card: rgba(17, 24, 39, 0.85);
+      --bg-surface: #1e293b;
+      --bg-surface-hover: #334155;
+      --bg-input: #111827;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(99, 102, 241, 0.4);
+      
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      
+      --bot-msg-bg: #1e293b;
+      --bot-msg-text: #f1f5f9;
+      --user-msg-bg: linear-gradient(135deg, #4f46e5 0%, #2563eb 100%);
+      --user-msg-text: #ffffff;
+      
+      --shadow-elevation: 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 20px rgba(99, 102, 241, 0.15);
+      --radius-lg: 20px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    [data-theme="light"] {
+      --bg-page: #f8fafc;
+      --bg-card: rgba(255, 255, 255, 0.95);
+      --bg-surface: #f1f5f9;
+      --bg-surface-hover: #e2e8f0;
+      --bg-input: #ffffff;
+      --border-subtle: rgba(0, 0, 0, 0.08);
+      --border-hover: rgba(99, 102, 241, 0.5);
+      
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-faint: #94a3b8;
+      
+      --bot-msg-bg: #f1f5f9;
+      --bot-msg-text: #0f172a;
+      --user-msg-bg: linear-gradient(135deg, #4f46e5 0%, #2563eb 100%);
+      --user-msg-text: #ffffff;
+      
+      --shadow-elevation: 0 20px 40px -15px rgba(0, 0, 0, 0.08), 0 0 20px rgba(99, 102, 241, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+      position: relative;
+      overflow-x: hidden;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    /* Ambient Glowing Blobs */
+    .blob {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(90px);
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.35;
+      animation: float 20s infinite alternate ease-in-out;
+    }
+    .blob-1 {
+      width: 450px;
+      height: 450px;
+      background: #6366f1;
+      top: -100px;
+      left: -100px;
+    }
+    .blob-2 {
+      width: 400px;
+      height: 400px;
+      background: #06b6d4;
+      bottom: -100px;
+      right: -100px;
+      animation-delay: -10s;
+    }
+    @keyframes float {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(40px, 40px) scale(1.1); }
+    }
+
+    /* Main Container */
+    #app-container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 840px;
+      height: 90vh;
+      height: 90dvh;
+      background: var(--bg-card);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-elevation);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: rgba(0,0,0,0.03);
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+    }
+
+    .brand-logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--color-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+      flex-shrink: 0;
+    }
+
+    .brand-logo svg {
+      width: 26px;
+      height: 26px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+    }
+
+    .brand-info h1 {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-badge {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: rgba(99, 102, 241, 0.15);
+      color: var(--color-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 10px #10b981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.9); }
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-icon {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-icon:hover {
+      background: var(--bg-surface-hover);
+      color: var(--text-main);
+      border-color: var(--border-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Chat Body */
+    #chat-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      scroll-behavior: smooth;
+    }
+
+    /* Welcome Banner */
+    .welcome-card {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(6, 182, 212, 0.05) 100%);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      margin-bottom: 6px;
+      animation: fadeIn 0.4s ease;
+    }
+
+    .welcome-card h2 {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .welcome-card p {
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    .starters-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .starter-chip {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 7px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .starter-chip:hover {
+      background: var(--color-primary);
+      color: white;
+      border-color: var(--color-primary);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+
+    /* Messages */
+    .message-row {
+      display: flex;
+      gap: 12px;
+      max-width: 85%;
+      animation: msgIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-row.user {
+      margin-left: auto;
+      flex-direction: row-reverse;
+    }
+
+    .avatar-wrap {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+
+    .avatar-bot {
+      background: var(--color-gradient);
+      color: white;
+      box-shadow: 0 3px 10px rgba(99, 102, 241, 0.3);
+    }
+
+    .avatar-user {
+      background: var(--bg-surface-hover);
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .bubble-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      word-break: break-word;
+      position: relative;
+    }
+
+    .bot .bubble {
+      background: var(--bot-msg-bg);
+      color: var(--bot-msg-text);
+      border-top-left-radius: 4px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .user .bubble {
+      background: var(--user-msg-bg);
+      color: var(--user-msg-text);
+      border-top-right-radius: 4px;
+      box-shadow: 0 4px 15px rgba(79, 70, 229, 0.25);
+    }
+
+    /* Markdown inside bot bubble */
+    .bubble p { margin-bottom: 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble ul, .bubble ol { margin: 6px 0 8px 18px; }
+    .bubble li { margin-bottom: 4px; }
+    .bubble strong { font-weight: 600; color: inherit; }
+    .bubble code {
+      font-family: monospace;
+      font-size: 0.85em;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(0,0,0,0.2);
+    }
+    .bubble a {
+      color: var(--color-accent);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .meta-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.72rem;
+      color: var(--text-faint);
+      padding: 0 4px;
+    }
+
+    .user .meta-bar { justify-content: flex-end; }
+
+    .btn-copy {
+      background: transparent;
+      border: none;
+      color: var(--text-faint);
+      cursor: pointer;
+      font-size: 0.72rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: color 0.2s;
+    }
+
+    .btn-copy:hover { color: var(--text-main); }
+
+    /* Typing Dots */
+    .typing-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      animation: msgIn 0.2s ease;
+    }
+
+    .typing-box {
+      background: var(--bot-msg-bg);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      border-top-left-radius: 4px;
+      padding: 12px 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--color-primary);
+      animation: dotPulse 1.4s infinite ease-in-out both;
+    }
+
+    .dot:nth-child(1) { animation-delay: -0.32s; }
+    .dot:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes dotPulse {
+      0%, 80%, 100% { transform: scale(0.4); opacity: 0.4; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Input Footer */
+    footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-subtle);
+      background: rgba(0,0,0,0.02);
+    }
+
+    #chat-form {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 8px 12px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    #chat-form:focus-within {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+
+    #user-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      font-family: var(--font-body);
+      font-size: 0.95rem;
+      color: var(--text-main);
+      resize: none;
+      max-height: 120px;
+      min-height: 24px;
+      line-height: 1.5;
+      padding: 4px 0;
+    }
+
+    #user-input::placeholder {
+      color: var(--text-faint);
+    }
+
+    .send-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--color-gradient);
+      border: none;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .send-btn:hover:not(:disabled) {
+      background: var(--color-gradient-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .send-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.2;
+    }
+
+    .footer-help {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      padding: 0 4px;
+      font-size: 0.72rem;
+      color: var(--text-faint);
+    }
+
+    .footer-help a {
+      color: var(--color-primary);
+      text-decoration: none;
+    }
+    .footer-help a:hover { text-decoration: underline; }
+
+    /* Modal for About/Services */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-content {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 500px;
+      padding: 24px;
+      box-shadow: var(--shadow-elevation);
+      max-height: 80vh;
+      overflow-y: auto;
+      transform: scale(0.95);
+      transition: transform 0.2s ease;
+    }
+
+    .modal-backdrop.active .modal-content {
+      transform: scale(1);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .modal-header h3 {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
+    [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); }
+
+    @media (max-width: 640px) {
+      body { padding: 0; }
+      #app-container {
+        height: 100vh;
+        height: 100dvh;
+        border-radius: 0;
+        border: none;
+      }
+      .message-row { max-width: 92%; }
+    }
+  </style>
 </head>
 <body>
-<div id="chat">
-  <div id="log"></div>
-  <form id="form">
-    <input id="input" placeholder="Ask about our services......" autocomplete="off" required>
-    <button id="send">Send</button>
-  </form>
-</div>
-<script>
-  const log = document.getElementById("log");
-  const form = document.getElementById("form");
-  const input = document.getElementById("input");
-  const sendBtn = document.getElementById("send");
-  let sessionId = localStorage.getItem("session_id");
+  <!-- Ambient background glow -->
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
 
-  function addMsg(text, who) {
-    const div = document.createElement("div");
-    div.className = "msg " + who;
-    div.textContent = text;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
-  }
+  <main id="app-container" role="main">
+    <!-- Header -->
+    <header>
+      <div class="brand-wrap">
+        <div class="brand-logo" aria-hidden="true">
+          <!-- Octapus SVG Icon -->
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 7v5l3 3"/>
+            <path d="M7.5 16.5c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0"/>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <h1>
+            Octapus Assistant
+            <span class="brand-badge">Official</span>
+          </h1>
+          <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span>Online • Instant replies</span>
+          </div>
+        </div>
+      </div>
 
-  addMsg("Hi! How can I help you today?", "bot");
+      <div class="header-actions">
+        <button class="btn-icon" id="info-btn" title="About Octapus & Services" aria-label="About services">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 16v-4"></path>
+            <path d="M12 8h.01"></path>
+          </svg>
+        </button>
+        <button class="btn-icon" id="clear-btn" title="Clear Chat" aria-label="Clear chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18"></path>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+        <button class="btn-icon" id="theme-btn" title="Toggle Theme" aria-label="Toggle theme">
+          <svg id="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const message = input.value.trim();
-    if (!message) return;
-    addMsg(message, "user");
-    input.value = "";
-    sendBtn.disabled = true;
-    try {
-      const res = await fetch("/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, session_id: sessionId }),
+    <!-- Chat Messages Stream -->
+    <div id="chat-log" role="log" aria-live="polite">
+      <!-- Welcome Hero Banner -->
+      <div class="welcome-card" id="welcome-banner">
+        <h2>👋 Welcome to Octapus LLC</h2>
+        <p>I am your digital concierge. Ask me about our UAE software solutions, website development, payment integration, tailoring ERP, and custom digital services.</p>
+        <div class="starters-grid">
+          <button class="starter-chip" data-msg="What services does Octapus offer?">
+            🌐 Our Services
+          </button>
+          <button class="starter-chip" data-msg="How does payment integration work?">
+            💳 Payment Integration
+          </button>
+          <button class="starter-chip" data-msg="Tell me about ERP for tailoring workshops.">
+            🧵 Tailoring ERP
+          </button>
+          <button class="starter-chip" data-msg="How do I get a price quote for my project?">
+            📋 Request a Quote
+          </button>
+          <button class="starter-chip" data-msg="What are your WhatsApp Business integrations?">
+            💬 WhatsApp Setup
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Footer -->
+    <footer>
+      <form id="chat-form">
+        <textarea
+          id="user-input"
+          rows="1"
+          placeholder="Ask a question or select a topic..."
+          autocomplete="off"
+          required
+          aria-label="Your message"
+        ></textarea>
+        <button type="submit" class="send-btn" id="send-btn" aria-label="Send message">
+          <svg viewBox="0 0 24 24">
+            <path d="M22 2L11 13"/>
+            <path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+          </svg>
+        </button>
+      </form>
+      <div class="footer-help">
+        <span>Press <strong>Enter</strong> to send • <strong>Shift+Enter</strong> for newline</span>
+        <span>Contact: <a href="mailto:info@octapus.ae">info@octapus.ae</a></span>
+      </div>
+    </footer>
+  </main>
+
+  <!-- About / Services Modal -->
+  <div class="modal-backdrop" id="info-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title">About Octapus LLC</h3>
+        <button class="btn-icon" id="close-modal" aria-label="Close modal">✕</button>
+      </div>
+      <div style="font-size: 0.92rem; line-height: 1.6; color: var(--text-muted); display: flex; flex-direction: column; gap: 12px;">
+        <p><strong>Octapus LLC</strong> is a premier UAE-based software and digital services company based in Dubai.</p>
+        <p><strong>Core Capabilities:</strong></p>
+        <ul style="margin-left: 20px;">
+          <li>Website Design & Modern Web Application Development</li>
+          <li>Payment Provider API & POS Integrations</li>
+          <li>Tailoring Workshops & Enterprise ERP Solutions</li>
+          <li>WhatsApp Business Automations</li>
+          <li>Branding, Media Production & SEO Enhancement</li>
+        </ul>
+        <p><strong>Custom Quotations:</strong> Every project is uniquely quoted following a requirements consultation. Ready to collaborate?</p>
+        <div style="margin-top: 8px;">
+          <a href="mailto:info@octapus.ae" style="display: block; text-align: center; padding: 10px; background: var(--color-gradient); color: white; border-radius: 8px; text-decoration: none; font-weight: 600;">
+            Email info@octapus.ae
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const log = document.getElementById("chat-log");
+      const form = document.getElementById("chat-form");
+      const input = document.getElementById("user-input");
+      const sendBtn = document.getElementById("send-btn");
+      const clearBtn = document.getElementById("clear-btn");
+      const themeBtn = document.getElementById("theme-btn");
+      const infoBtn = document.getElementById("info-btn");
+      const infoModal = document.getElementById("info-modal");
+      const closeModal = document.getElementById("close-modal");
+
+      let sessionId = localStorage.getItem("octapus_session_id") || null;
+
+      // Theme Management
+      function initTheme() {
+        const saved = localStorage.getItem("octapus_theme");
+        if (saved) {
+          document.documentElement.setAttribute("data-theme", saved);
+        } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      }
+      initTheme();
+
+      themeBtn.addEventListener("click", () => {
+        const current = document.documentElement.getAttribute("data-theme") || "dark";
+        const next = current === "light" ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", next);
+        localStorage.setItem("octapus_theme", next);
       });
-      if (!res.ok) throw new Error("Server error " + res.status);
-      const data = await res.json();
-      sessionId = data.session_id;
-      localStorage.setItem("session_id", sessionId);
-      addMsg(data.reply, "bot");
-    } catch (err) {
-      addMsg("Sorry, something went wrong. Please try again.", "bot");
-    } finally {
-      sendBtn.disabled = false;
-      input.focus();
-    }
-  });
-</script>
+
+      // Modal Controls
+      infoBtn.addEventListener("click", () => infoModal.classList.add("active"));
+      closeModal.addEventListener("click", () => infoModal.classList.remove("active"));
+      infoModal.addEventListener("click", (e) => {
+        if (e.target === infoModal) infoModal.classList.remove("active");
+      });
+
+      // Sound Effect (Subtle Web Audio API beep)
+      function playTone() {
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(600, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.04, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.08);
+        } catch (_) {}
+      }
+
+      // Format simple markdown into rich HTML
+      function renderMarkdown(raw) {
+        if (!raw) return "";
+        let text = raw
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+
+        // Code blocks
+        text = text.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+        // Bold & Italic
+        text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+        // Email & URLs
+        text = text.replace(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g, '<a href="mailto:$1">$1</a>');
+        text = text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+        text = text.replace(/\b(octapus\.ae)\b/g, '<a href="https://octapus.ae" target="_blank" rel="noopener">octapus.ae</a>');
+
+        // Lists
+        const lines = text.split("\n");
+        let html = "";
+        let inList = false;
+
+        for (let line of lines) {
+          line = line.trim();
+          if (line.startsWith("- ") || line.startsWith("* ")) {
+            if (!inList) { html += "<ul>"; inList = true; }
+            html += `<li>${line.substring(2)}</li>`;
+          } else {
+            if (inList) { html += "</ul>"; inList = false; }
+            if (line) html += `<p>${line}</p>`;
+          }
+        }
+        if (inList) html += "</ul>";
+        return html;
+      }
+
+      function formatTime() {
+        return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function appendMessage(content, sender = "bot") {
+        const row = document.createElement("div");
+        row.className = `message-row ${sender}`;
+
+        const avatar = document.createElement("div");
+        avatar.className = `avatar-wrap ${sender === "bot" ? "avatar-bot" : "avatar-user"}`;
+        avatar.innerHTML = sender === "bot"
+          ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>`
+          : `<span>You</span>`;
+
+        const bubbleWrap = document.createElement("div");
+        bubbleWrap.className = "bubble-wrap";
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        if (sender === "bot") {
+          bubble.innerHTML = renderMarkdown(content);
+        } else {
+          bubble.textContent = content;
+        }
+
+        const meta = document.createElement("div");
+        meta.className = "meta-bar";
+        meta.innerHTML = `<span>${formatTime()}</span>`;
+
+        if (sender === "bot") {
+          const copyBtn = document.createElement("button");
+          copyBtn.className = "btn-copy";
+          copyBtn.innerHTML = `📋 Copy`;
+          copyBtn.onclick = () => {
+            navigator.clipboard.writeText(content).then(() => {
+              copyBtn.innerHTML = `✓ Copied!`;
+              setTimeout(() => { copyBtn.innerHTML = `📋 Copy`; }, 1800);
+            });
+          };
+          meta.appendChild(copyBtn);
+        }
+
+        bubbleWrap.appendChild(bubble);
+        bubbleWrap.appendChild(meta);
+
+        row.appendChild(avatar);
+        row.appendChild(bubbleWrap);
+        log.appendChild(row);
+        log.scrollTop = log.scrollHeight;
+
+        playTone();
+      }
+
+      // Typing Indicator
+      let typingElement = null;
+      function showTyping() {
+        if (typingElement) return;
+        typingElement = document.createElement("div");
+        typingElement.className = "message-row bot typing-row";
+        typingElement.innerHTML = `
+          <div class="avatar-wrap avatar-bot">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          </div>
+          <div class="typing-box">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
+        `;
+        log.appendChild(typingElement);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function hideTyping() {
+        if (typingElement) {
+          typingElement.remove();
+          typingElement = null;
+        }
+      }
+
+      // Auto-resize textarea
+      input.addEventListener("input", () => {
+        input.style.height = "auto";
+        input.style.height = Math.min(input.scrollHeight, 120) + "px";
+      });
+
+      // Submit Message
+      async function sendMessage(text) {
+        const message = text.trim();
+        if (!message) return;
+
+        appendMessage(message, "user");
+        input.value = "";
+        input.style.height = "auto";
+        sendBtn.disabled = true;
+        showTyping();
+
+        try {
+          const res = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message, session_id: sessionId })
+          });
+
+          if (!res.ok) {
+            throw new Error("Server error " + res.status);
+          }
+
+          const data = await res.json();
+          sessionId = data.session_id;
+          localStorage.setItem("octapus_session_id", sessionId);
+
+          hideTyping();
+          appendMessage(data.reply, "bot");
+        } catch (err) {
+          hideTyping();
+          appendMessage("Sorry, I encountered an issue connecting to the assistant. Please try again or reach out directly to **info@octapus.ae**.", "bot");
+        } finally {
+          sendBtn.disabled = false;
+          input.focus();
+        }
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        sendMessage(input.value);
+      });
+
+      // Keyboard submit (Enter sends, Shift+Enter newlines)
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          form.dispatchEvent(new Event("submit"));
+        }
+      });
+
+      // Starter chips click handler
+      document.querySelectorAll(".starter-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          const prompt = chip.getAttribute("data-msg");
+          if (prompt) sendMessage(prompt);
+        });
+      });
+
+      // Clear chat
+      clearBtn.addEventListener("click", async () => {
+        if (confirm("Clear conversation history and start fresh?")) {
+          if (sessionId) {
+            try {
+              await fetch("/chat/reset", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id: sessionId })
+              });
+            } catch (_) {}
+          }
+          localStorage.removeItem("octapus_session_id");
+          sessionId = null;
+          log.innerHTML = "";
+          // Re-insert welcome banner
+          const banner = document.getElementById("welcome-banner");
+          if (banner) log.appendChild(banner);
+          appendMessage("Chat cleared! How can I assist you with Octapus LLC's services today?", "bot");
+        }
+      });
+
+      // Initial friendly greeting
+      appendMessage("Hello! 👋 Welcome to **Octapus LLC**. How can I help you today with our web, ERP, payment integrations, or digital solutions?", "bot");
+    })();
+  </script>
 </body>
 </html>

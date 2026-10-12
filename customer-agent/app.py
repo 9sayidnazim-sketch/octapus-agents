@@ -44,7 +44,18 @@ Never invent prices, policies, or promises. Keep answers short and friendly.
 {COMPANY_INFO}
 </company_information>"""
 
-app = FastAPI(title="Octapus Customer Assistant")
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="Octapus Customer Assistant", description="AI Customer Service Agent for Octapus LLC")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 from typing import Optional
@@ -63,9 +74,22 @@ class ChatOut(BaseModel):
     session_id: str
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "app": "octapus-customer-agent", "model": MODEL}
+
+
 @app.get("/")
 def index():
     return FileResponse(BASE_DIR / "static" / "index.html")
+
+
+@app.post("/chat/reset")
+def reset_chat(body: dict):
+    s_id = body.get("session_id")
+    if s_id and s_id in sessions:
+        sessions.pop(s_id, None)
+    return {"status": "cleared"}
 
 
 @app.post("/chat", response_model=ChatOut)
