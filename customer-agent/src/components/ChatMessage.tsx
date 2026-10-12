@@ -29,6 +29,9 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
       if (audioRef.current) {
         audioRef.current.pause();
       }
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
     };
   }, []);
 

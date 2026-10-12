@@ -90,24 +90,42 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         textareaRef.current?.focus();
       };
       reader.readAsDataURL(file);
+      e.target.value = "";
     }
   };
 
   // Audio Recording handling
   const startRecording = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Audio recording is not supported on this browser.");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+
+      let mimeType = "";
+      if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm";
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          mimeType = "audio/mp4";
+        }
+      }
+
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+        if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
 
-      recorder.start();
+      recorder.start(250);
       setIsRecording(true);
       setRecordingSeconds(0);
 
@@ -119,27 +137,29 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       // Web Speech API for real-time speech-to-text dictation
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = "en-US";
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = "en-US";
 
-        recognition.onresult = (event: any) => {
-          let transcript = "";
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            transcript += event.results[i][0].transcript;
-          }
-          if (transcript) {
-            onChange(transcript);
-          }
-        };
+          recognition.onresult = (event: any) => {
+            let transcript = "";
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              transcript += event.results[i][0].transcript;
+            }
+            if (transcript) {
+              onChange(transcript);
+            }
+          };
 
-        recognition.onerror = () => {};
-        recognition.start();
-        speechRecognitionRef.current = recognition;
+          recognition.onerror = () => {};
+          recognition.start();
+          speechRecognitionRef.current = recognition;
+        } catch (_) {}
       }
     } catch (err) {
-      alert("Microphone permission was denied or is unavailable in your browser.");
+      alert("Microphone permission was denied or is unavailable.");
     }
   };
 
@@ -147,10 +167,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current.stream?.getTracks().forEach((track) => track.stop());
     }
     if (speechRecognitionRef.current) {
-      speechRecognitionRef.current.stop();
+      try { speechRecognitionRef.current.stop(); } catch (_) {}
     }
     setIsRecording(false);
     setRecordingSeconds(0);
@@ -159,16 +179,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const stopAndSendRecording = () => {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     if (speechRecognitionRef.current) {
-      speechRecognitionRef.current.stop();
+      try { speechRecognitionRef.current.stop(); } catch (_) {}
     }
 
     const durationStr = `${Math.floor(recordingSeconds / 60)}:${(recordingSeconds % 60).toString().padStart(2, "0")}`;
 
     if (mediaRecorderRef.current) {
+      const mime = mediaRecorderRef.current.mimeType || "audio/webm";
       mediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm;codecs=opus" });
+        const audioBlob = new Blob(audioChunksRef.current, { type: mime });
         const audioUrl = URL.createObjectURL(audioBlob);
-        mediaRecorderRef.current?.stream.getTracks().forEach((track) => track.stop());
+        mediaRecorderRef.current?.stream?.getTracks().forEach((track) => track.stop());
 
         const query = value.trim() || `Voice Note (${durationStr})`;
         onSend(query, undefined, audioUrl, durationStr);
