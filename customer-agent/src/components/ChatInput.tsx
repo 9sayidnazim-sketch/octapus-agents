@@ -1,16 +1,16 @@
 import React, { useRef, useEffect, useState } from "react";
 import {
-  ArrowUp,
-  Paperclip,
+  Send,
+  Plus,
+  Mic,
+  ChevronDown,
+  Trash2,
+  Square,
+  X,
   Image as ImageIcon,
   FileText,
   Video,
-  Mic,
-  Square,
-  Trash2,
-  X,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 interface ChatInputProps {
   value: string;
@@ -29,9 +29,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  // Image attachment state
+  // Attachment state
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string>("");
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [modelSpeed, setModelSpeed] = useState("Fast");
+  const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
 
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -48,7 +51,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, [value]);
 
-  // Clean up recording timer on unmount
   useEffect(() => {
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
@@ -56,7 +58,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         mediaRecorderRef.current.stop();
       }
       if (speechRecognitionRef.current) {
-        speechRecognitionRef.current.stop();
+        try { speechRecognitionRef.current.stop(); } catch (_) {}
       }
     };
   }, []);
@@ -79,7 +81,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     onChange("");
   };
 
-  // Image handling
   const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -90,6 +91,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         textareaRef.current?.focus();
       };
       reader.readAsDataURL(file);
+      e.target.value = "";
+    }
+  };
+
+  const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onChange(value ? `${value} [Attached: ${file.name}]` : `I have attached ${file.name} for our project requirements.`);
+      textareaRef.current?.focus();
       e.target.value = "";
     }
   };
@@ -129,12 +139,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       setIsRecording(true);
       setRecordingSeconds(0);
 
-      // Start duration counter
       timerIntervalRef.current = window.setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
 
-      // Web Speech API for real-time speech-to-text dictation
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         try {
@@ -158,7 +166,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           speechRecognitionRef.current = recognition;
         } catch (_) {}
       }
-    } catch (err) {
+    } catch {
       alert("Microphone permission was denied or is unavailable.");
     }
   };
@@ -207,39 +215,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  const handleAttachmentClick = (actionName: string) => {
-    if (actionName === "file") {
-      fileInputRef.current?.click();
-    } else if (actionName === "image") {
-      imageInputRef.current?.click();
-    } else if (actionName === "document") {
-      onChange(value ? `${value}\n\n[Project Specification Document attached]` : "I would like to share our project specification for an individual quote.");
-      textareaRef.current?.focus();
-    } else if (actionName === "video") {
-      onChange(value ? `${value}\n\n[Request consultation call]` : "Can we arrange a quick consultation call to discuss our UAE project?");
-      textareaRef.current?.focus();
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const note = `[Attached: ${file.name}]`;
-      onChange(value ? `${value} ${note}` : `I have attached ${file.name} for our project requirements.`);
-      textareaRef.current?.focus();
-    }
-  };
-
   const hasContent = value.trim().length > 0 || selectedImage !== null;
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-4 pb-5 pt-2">
+    <div className="w-full max-w-3xl mx-auto px-4 pb-3 pt-2">
       {/* Hidden file inputs */}
       <input
         ref={fileInputRef}
         type="file"
         className="hidden"
-        onChange={handleFileChange}
+        onChange={handleFilePick}
       />
       <input
         ref={imageInputRef}
@@ -249,124 +234,164 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         onChange={handleImagePick}
       />
 
-      {/* Floating Card Container inspired by Iconly design */}
-      <div className="group relative bg-white/95 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/90 rounded-[28px] shadow-[0_14px_45px_-12px_rgba(15,23,42,0.08)] dark:shadow-[0_18px_50px_-12px_rgba(0,0,0,0.65)] backdrop-blur-xl transition-all duration-300 focus-within:border-sky-400/60 focus-within:ring-2 focus-within:ring-sky-400/20">
+      {/* Floating Card Container matching mockup */}
+      <div className="relative bg-[#f4f5fa] dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-[28px] p-4 sm:p-5 shadow-xs transition-all focus-within:border-blue-400/80 focus-within:ring-2 focus-within:ring-blue-500/15">
         
         {/* Image Attachment Preview Strip */}
         {selectedImage && (
-          <div className="px-5 pt-3 flex items-center gap-2">
-            <div className="relative group/img rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-              <img src={selectedImage} alt="Attachment" className="h-16 w-16 object-cover" />
+          <div className="mb-2 flex items-center gap-2">
+            <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <img src={selectedImage} alt="Attachment" className="h-14 w-14 object-cover" />
               <button
                 type="button"
                 onClick={() => setSelectedImage(null)}
-                className="absolute top-1 right-1 p-0.5 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
+                className="absolute top-1 right-1 p-0.5 rounded-full bg-black/60 text-white hover:bg-black/80 cursor-pointer"
                 title="Remove image"
               >
                 <X className="w-3 h-3" />
               </button>
             </div>
-            <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+            <div className="text-xs text-muted-foreground truncate">
               <span className="font-medium text-foreground block truncate">{imageName || "Image attached"}</span>
-              <span>Ready to send with prompt</span>
+              <span>Ready to submit</span>
             </div>
           </div>
         )}
 
-        {/* Normal Mode vs Live Audio Recording Mode */}
         {!isRecording ? (
           <>
             {/* Top Textarea Section */}
-            <div className="px-5 pt-4 pb-2">
+            <div className="w-full">
               <textarea
                 ref={textareaRef}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Message Horus..."
+                placeholder="Ask Horus"
                 rows={1}
                 disabled={isLoading}
-                className="w-full bg-transparent border-0 outline-none resize-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-[15px] sm:text-base leading-relaxed max-h-36 min-h-[28px]"
+                className="w-full bg-transparent border-0 outline-none resize-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-base leading-relaxed max-h-36 min-h-[32px]"
               />
             </div>
 
-            {/* Faint Horizontal Divider Line */}
-            <div className="h-px bg-slate-100 dark:bg-slate-800/80 mx-4" />
-
-            {/* Bottom Actions Row */}
-            <div className="px-4 py-2.5 flex items-center justify-between gap-3">
-              {/* Action Icons */}
-              <div className="flex items-center gap-1 sm:gap-2">
+            {/* Bottom Controls matching mockup */}
+            <div className="flex items-center justify-between pt-3 relative">
+              {/* Left: Circle + Button */}
+              <div className="relative">
                 <button
                   type="button"
-                  onClick={() => handleAttachmentClick("file")}
-                  title="Attach File"
-                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 rounded-xl transition-all cursor-pointer"
+                  onClick={() => setAttachMenuOpen(!attachMenuOpen)}
+                  className="w-9 h-9 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 text-slate-600 dark:text-slate-300 shadow-xs flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  title="Add attachment"
                 >
-                  <Paperclip className="w-[18px] h-[18px]" />
+                  <Plus className="w-4 h-4" />
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleAttachmentClick("image")}
-                  title="Upload / Add Image"
-                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-xl transition-all cursor-pointer"
-                >
-                  <ImageIcon className="w-[18px] h-[18px]" />
-                </button>
+                {/* Attachment Menu Popup */}
+                {attachMenuOpen && (
+                  <div
+                    className="absolute left-0 bottom-12 w-48 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-1.5 z-50 animate-in fade-in"
+                    onClick={() => setAttachMenuOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      <ImageIcon className="w-4 h-4 text-sky-500" />
+                      <span>Upload Image</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      <FileText className="w-4 h-4 text-indigo-500" />
+                      <span>Attach Document</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange("Can we schedule a consultation call to discuss our UAE project?");
+                        textareaRef.current?.focus();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      <Video className="w-4 h-4 text-emerald-500" />
+                      <span>Book Consultation</span>
+                    </button>
+                  </div>
+                )}
+              </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleAttachmentClick("document")}
-                  title="Attach Specification"
-                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 rounded-xl transition-all cursor-pointer"
-                >
-                  <FileText className="w-[18px] h-[18px]" />
-                </button>
+              {/* Right: Fast ⌵ + Mic + Send */}
+              <div className="flex items-center gap-2">
+                {/* Fast ⌵ Capsule Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setSpeedMenuOpen(!speedMenuOpen)}
+                    className="rounded-full px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 shadow-xs flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  >
+                    <span>{modelSpeed}</span>
+                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleAttachmentClick("video")}
-                  title="Request Video Consultation"
-                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 rounded-xl transition-all cursor-pointer"
-                >
-                  <Video className="w-[18px] h-[18px]" />
-                </button>
+                  {speedMenuOpen && (
+                    <div
+                      className="absolute right-0 bottom-10 w-32 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg p-1 z-50 animate-in fade-in"
+                      onClick={() => setSpeedMenuOpen(false)}
+                    >
+                      <button
+                        onClick={() => setModelSpeed("Fast")}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        Fast
+                      </button>
+                      <button
+                        onClick={() => setModelSpeed("Thinking")}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        Thinking
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-                {/* Microphone / Audio Recording Trigger */}
+                {/* Mic Audio Recording Circle */}
                 <button
                   type="button"
                   onClick={startRecording}
-                  title="Record Voice Note"
-                  className="p-2 text-slate-400 dark:text-slate-500 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-xl transition-all cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 text-slate-600 dark:text-slate-300 shadow-xs flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  title="Voice Note"
                 >
-                  <Mic className="w-[18px] h-[18px]" />
+                  <Mic className="w-4 h-4" />
+                </button>
+
+                {/* Send Paper Plane Circle Button matching mockup */}
+                <button
+                  type="button"
+                  onClick={handleFinalSend}
+                  disabled={isLoading || !hasContent}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                    hasContent && !isLoading
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/25 hover:bg-blue-700 active:scale-95"
+                      : "bg-blue-600/70 text-white/80 cursor-default"
+                  }`}
+                  aria-label="Send"
+                >
+                  {isLoading ? (
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4 ml-0.5 fill-current" />
+                  )}
                 </button>
               </div>
-
-              {/* Signature Sky-Blue Gradient Capsule Send Button */}
-              <Button
-                type="button"
-                variant="capsule"
-                size="capsule"
-                onClick={handleFinalSend}
-                disabled={isLoading}
-                className={`w-16 sm:w-20 h-10 px-0 flex items-center justify-center transition-all duration-300 ${
-                  !hasContent && !isLoading ? "opacity-90 hover:opacity-100" : ""
-                }`}
-                aria-label="Send message"
-              >
-                {isLoading ? (
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <ArrowUp className="w-5 h-5 text-white stroke-[2.5]" />
-                )}
-              </Button>
             </div>
           </>
         ) : (
           /* Live Audio Recording Panel */
-          <div className="p-4 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="py-2 flex items-center justify-between gap-3 animate-in fade-in duration-200">
             <div className="flex items-center gap-3">
               <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
@@ -377,12 +402,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, "0")}
               </span>
 
-              {/* Equalizer animation */}
               <div className="flex items-center gap-1 h-5 px-2">
                 {[60, 100, 40, 80, 50, 90, 70].map((h, idx) => (
                   <span
                     key={idx}
-                    className="w-1 bg-sky-500 rounded-full animate-pulse"
+                    className="w-1 bg-blue-600 rounded-full animate-pulse"
                     style={{
                       height: `${h}%`,
                       animationDelay: `${idx * 0.1}s`,
@@ -406,20 +430,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 <Trash2 className="w-4 h-4" />
               </button>
 
-              <Button
+              <button
                 type="button"
-                variant="capsule"
-                size="sm"
                 onClick={stopAndSendRecording}
-                className="h-9 px-4 flex items-center gap-1.5"
+                className="h-9 px-4 rounded-full bg-blue-600 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm hover:bg-blue-700 active:scale-95 cursor-pointer"
               >
-                <Square className="w-3.5 h-3.5 fill-current" />
+                <Square className="w-3 h-3 fill-current" />
                 <span>Send Note</span>
-              </Button>
+              </button>
             </div>
           </div>
         )}
       </div>
+
+      {/* Footer Disclaimer matching mockup */}
+      <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center mt-2.5 pb-1 select-none">
+        Horus can make mistakes. Check important details.
+      </p>
     </div>
   );
 };

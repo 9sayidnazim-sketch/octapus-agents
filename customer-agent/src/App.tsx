@@ -13,7 +13,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(() => {
     return localStorage.getItem("octapus_session_id");
   });
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [recentTopics, setRecentTopics] = useState<string[]>(() => {
     const saved = localStorage.getItem("octapus_recent_topics");
@@ -138,10 +138,10 @@ export default function App() {
 
   return (
     <div className="flex h-screen h-[100dvh] w-full bg-background text-foreground overflow-hidden font-sans">
-      {/* Sidebar */}
+      {/* Sidebar with left icon rail */}
       <Sidebar
         isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
+        onToggle={() => setSidebarOpen((prev) => !prev)}
         onNewChat={handleClearChat}
         onOpenAbout={() => setAboutOpen(true)}
         recentTopics={recentTopics}
