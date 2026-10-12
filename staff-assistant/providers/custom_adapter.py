@@ -124,7 +124,9 @@ class CustomAdapter(ProviderAdapter):
             return ProviderResponse(error="Invalid or non-HTTPS base URL provided")
 
         url = base_url.rstrip("/")
-        model_name = model or "default-model"
+        model_name = model.strip()
+        if not model_name:
+            raise ValueError("A model name must be configured in Settings.")
         params = params or {}
 
         formatted_messages = []

@@ -137,7 +137,9 @@ class OpenRouterAdapter(ProviderAdapter):
             return ProviderResponse(error="OpenRouter API key is not configured")
 
         url = (base_url or "https://openrouter.ai/api/v1").rstrip("/")
-        model_name = model or "anthropic/claude-3.5-sonnet"
+        model_name = model.strip()
+        if not model_name:
+            raise ValueError("A model name must be configured in Settings.")
         params = params or {}
 
         # Check if the chosen model supports tools

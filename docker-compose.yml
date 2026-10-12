@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  staff-assistant:
+    build:
+      context: ./staff-assistant
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - STAFF_PASSWORD=${STAFF_PASSWORD:-octapus-dev-staff-2026}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-https://api.anthropic.com}
+      - MASTER_KEY=${MASTER_KEY:-octapus-dev-master-key-2026}
+    volumes:
+      - staff_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  staff_data:

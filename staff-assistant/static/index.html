@@ -1022,8 +1022,8 @@
 
         <!-- Chat Header Model Dropdown -->
         <div class="model-picker-wrap">
-          <button type="button" id="headerModelBtn" class="header-model-btn" title="Switch Model for this chat">
-            <span id="currentModelBadge" class="model-badge">claude-sonnet-5-5</span>
+          <button type="button" id="headerModelBtn" class="header-model-btn" title="Model configured in Settings">
+            <span id="currentModelBadge" class="model-badge">Set model in Settings</span>
             <svg class="svg-icon" style="width:14px;height:14px;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div id="headerModelDropdown" class="model-dropdown-menu" style="display:none;"></div>
@@ -1214,7 +1214,13 @@
             <div class="section-title">Default Model & Parameters</div>
             <div class="form-group">
               <label class="form-label">Default Model</label>
-              <select id="settingDefaultModel" class="form-select"></select>
+              <input id="settingDefaultModel" class="form-input" type="text" placeholder="Enter the exact model name">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="settingDefaultProvider">Provider</label>
+              <select id="settingDefaultProvider" class="form-select">
+                <option value="anthropic">Anthropic</option><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="ollama">Ollama</option><option value="custom">Custom</option>
+              </select>
             </div>
             <div class="form-row-2">
               <div class="form-group">
@@ -1416,7 +1422,7 @@
   let sessionMessages = {};
   let lastUserMessage = "";
   let connectedModels = [];
-  let currentModel = "claude-sonnet-5-5";
+  let currentModel = "";
   let currentProvider = "anthropic";
 
   function generateSessionId() {
@@ -1836,11 +1842,7 @@
           else renderBotMessage(m.content);
         });
       }
-      if (data.conversation && data.conversation.model) {
-        currentModel = data.conversation.model;
-        currentProvider = data.conversation.provider || "anthropic";
-        currentModelBadge.textContent = currentModel;
-      }
+      await loadModelsCatalog();
       loadConversationsList();
       scrollToBottom();
     } catch (_) {}
@@ -1864,7 +1866,10 @@
       const res = await fetch("/models", { headers: { "X-Staff-Password": staffPassword } });
       if (!res.ok) return;
       const data = await res.json();
-      connectedModels = data.models || [];
+      currentModel = data.default_model || "";
+      currentProvider = data.default_provider || "anthropic";
+      currentModelBadge.textContent = currentModel || "Set model in Settings";
+      connectedModels = [];
       renderHeaderModelDropdown();
     } catch (_) {}
   }
@@ -1901,10 +1906,9 @@
     });
   }
 
-  headerModelBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const isShown = headerModelDropdown.style.display === "flex";
-    headerModelDropdown.style.display = isShown ? "none" : "flex";
+  headerModelBtn.addEventListener("click", () => {
+    settingsSidebarBtn.click();
+    document.querySelector('[data-tab="models"]').click();
   });
 
   document.addEventListener("click", () => {
@@ -1988,6 +1992,8 @@
 
       // Populate Models tab
       const mdl = data.models || {};
+      document.getElementById("settingDefaultModel").value = mdl.default_model || "";
+      document.getElementById("settingDefaultProvider").value = mdl.default_provider || "anthropic";
       document.getElementById("settingTemperature").value = mdl.temperature || 0.7;
       document.getElementById("tempVal").textContent = mdl.temperature || 0.7;
       document.getElementById("settingMaxTokens").value = mdl.max_output_tokens || 1200;
@@ -2125,6 +2131,8 @@
         custom_instructions: document.getElementById("settingCustomInstructions").value.trim(),
       },
       models: {
+        default_model: document.getElementById("settingDefaultModel").value.trim(),
+        default_provider: document.getElementById("settingDefaultProvider").value,
         temperature: parseFloat(document.getElementById("settingTemperature").value),
         max_output_tokens: parseInt(document.getElementById("settingMaxTokens").value),
         context_recent_messages: parseInt(document.getElementById("settingRecentMessages").value),
@@ -2152,6 +2160,7 @@
       if (res.ok) {
         showToast("Settings saved successfully", "success");
         applyTheme(payload.appearance.theme);
+        await loadModelsCatalog();
       } else {
         throw new Error("Failed to save settings");
       }

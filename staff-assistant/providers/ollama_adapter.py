@@ -105,7 +105,9 @@ class OllamaAdapter(ProviderAdapter):
         base_url: Optional[str] = None,
     ) -> ProviderResponse:
         url = (base_url or "http://localhost:11434").rstrip("/")
-        model_name = model or "llama3.2:latest"
+        model_name = model.strip()
+        if not model_name:
+            raise ValueError("A model name must be configured in Settings.")
         params = params or {}
 
         formatted_messages = []

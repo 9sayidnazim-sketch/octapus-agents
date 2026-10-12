@@ -127,7 +127,9 @@ class AnthropicAdapter(ProviderAdapter):
         url = base_url or os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com"
         client = anthropic.Anthropic(api_key=key, base_url=url)
         params = params or {}
-        model_name = model or "claude-sonnet-5-5"
+        model_name = model.strip()
+        if not model_name:
+            raise ValueError("A model name must be configured in Settings.")
         max_tokens = params.get("max_output_tokens", 1200)
 
         kwargs: Dict[str, Any] = {

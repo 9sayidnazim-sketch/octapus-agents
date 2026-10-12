@@ -147,7 +147,9 @@ class OpenAIAdapter(ProviderAdapter):
             return ProviderResponse(error="OpenAI API key is not configured")
 
         url = (base_url or os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
-        model_name = model or "gpt-4o"
+        model_name = model.strip()
+        if not model_name:
+            raise ValueError("A model name must be configured in Settings.")
         params = params or {}
 
         # Prepare messages

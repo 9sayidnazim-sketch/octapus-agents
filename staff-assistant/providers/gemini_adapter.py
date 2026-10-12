@@ -136,7 +136,9 @@ class GeminiAdapter(ProviderAdapter):
         if not key:
             return ProviderResponse(error="Google Gemini API key is not configured")
 
-        model_name = model or "gemini-1.5-flash"
+        model_name = model.strip()
+        if not model_name:
+            raise ValueError("A model name must be configured in Settings.")
         params = params or {}
 
         # Format messages for Gemini contents

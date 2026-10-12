@@ -23,14 +23,17 @@ for env_path in (BASE_DIR / ".env", BASE_DIR.parent / ".env"):
                 k, v = line.split("=", 1)
                 os.environ[k.strip()] = v.strip().strip("'\"")
 
-api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-if not api_key:
-    raise RuntimeError("Set the ANTHROPIC_API_KEY environment variable first.")
-os.environ["ANTHROPIC_API_KEY"] = api_key
-if "ANTHROPIC_AUTH_TOKEN" in os.environ:
-    os.environ["ANTHROPIC_AUTH_TOKEN"] = api_key
+def get_client() -> anthropic.Anthropic:
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Set ANTHROPIC_API_KEY in environment variables.")
+    base_url = os.environ.get("ANTHROPIC_BASE_URL")
+    if base_url:
+        return anthropic.Anthropic(api_key=api_key, base_url=base_url)
+    return anthropic.Anthropic(api_key=api_key)
 
-COMPANY_INFO = (BASE_DIR / "company_info.md").read_text(encoding="utf-8")
+COMPANY_INFO_PATH = BASE_DIR / "company_info.md"
+COMPANY_INFO = COMPANY_INFO_PATH.read_text(encoding="utf-8") if COMPANY_INFO_PATH.exists() else ""
 
 SYSTEM_PROMPT = f"""You are the customer assistant for Octapus LLC.
 Answer using only the company information below. If the answer is not there,
@@ -41,7 +44,6 @@ Never invent prices, policies, or promises. Keep answers short and friendly.
 {COMPANY_INFO}
 </company_information>"""
 
-client = anthropic.Anthropic()
 app = FastAPI(title="Octapus Customer Assistant")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
@@ -77,6 +79,7 @@ def chat(body: ChatIn):
     history.append({"role": "user", "content": message})
 
     try:
+        client = get_client()
         response = client.messages.create(
             model=MODEL,
             max_tokens=1000,
