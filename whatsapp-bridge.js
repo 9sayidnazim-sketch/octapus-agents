@@ -30,8 +30,19 @@ app.post("/incoming", async (req, res) => {
   try {
     const body = req.body || {};
 
-    // Flexible field extraction supporting various WhatsApp gateway payload formats
-    const from =
+    // Ignore non-Message events from Orbit if event type is specified
+    if (body.event && body.event !== "Message") {
+      return;
+    }
+
+    // Flexible field extraction supporting Orbit Gateway and standard formats
+    const rawSender =
+      body.data?.Info?.Sender ||
+      body.data?.Info?.Chat ||
+      body.data?.info?.Sender ||
+      body.data?.info?.Chat ||
+      body.data?.Info?.MessageSource?.Sender ||
+      body.data?.Info?.MessageSource?.Chat ||
       body.from ||
       body.number ||
       body.sender ||
@@ -40,33 +51,57 @@ app.post("/incoming", async (req, res) => {
       body.data?.sender;
 
     const text =
+      body.data?.Message?.conversation ||
+      body.data?.Message?.extendedTextMessage?.text ||
+      body.data?.Message?.imageMessage?.caption ||
+      body.data?.Message?.videoMessage?.caption ||
+      body.data?.Message?.documentMessage?.caption ||
+      body.data?.message?.conversation ||
+      body.data?.message?.extendedTextMessage?.text ||
+      body.data?.message?.imageMessage?.caption ||
       body.text ||
       body.message?.conversation ||
       body.message?.text ||
-      body.data?.message?.conversation ||
-      body.data?.message?.extendedTextMessage?.text ||
       (typeof body.message === "string" ? body.message : undefined);
 
     const fromMe = Boolean(
-      body.fromMe ||
+      body.data?.Info?.IsFromMe ||
+      body.data?.Info?.MessageSource?.IsFromMe ||
+      body.data?.info?.isFromMe ||
+      body.data?.info?.IsFromMe ||
       body.data?.key?.fromMe ||
+      body.fromMe ||
       body.isFromMe
     );
 
-    // Ignore empty messages or messages sent by ourselves to avoid infinite reply loops
-    if (!text || fromMe) {
+    // Ignore group chats, empty messages, or messages sent by ourselves
+    const isGroup = Boolean(
+      body.data?.Info?.IsGroup ||
+      body.data?.Info?.MessageSource?.IsGroup ||
+      String(rawSender).endsWith("@g.us")
+    );
+
+    if (!text || fromMe || isGroup || !rawSender) {
       return;
     }
 
-    // Clean phone number (e.g. "971501234567@s.whatsapp.net" -> "971501234567")
-    const cleanNumber = String(from).replace(/@.*$/, "").trim();
+    // Clean and normalize phone number
+    let cleanNumber = String(rawSender).split("@")[0].split(":")[0].replace(/[^0-9]/g, "").trim();
+    if (cleanNumber.startsWith("05") && cleanNumber.length === 10) {
+      cleanNumber = "971" + cleanNumber.slice(1);
+    }
+
+    if (!cleanNumber) {
+      console.warn("⚠️ [WhatsApp Incoming] Could not extract valid phone number from:", rawSender);
+      return;
+    }
 
     console.log(`📩 [WhatsApp Incoming] From: ${cleanNumber} | Message: "${text}"`);
 
     // Ask the Octapus AI Customer Agent
     const reply = await askAgent(cleanNumber, text);
 
-    console.log(`🤖 [Agent Reply] To: ${cleanNumber} | Reply: "${reply.slice(0, 80)}..."`);
+    console.log(`🤖 [Agent Reply] To: ${cleanNumber} | Reply: "${reply.slice(0, 80).replace(/\n/g, " ")}..."`);
 
     // Dispatch reply back through Orbit Gateway
     const response = await fetch(`${GATEWAY}/send/text`, {
