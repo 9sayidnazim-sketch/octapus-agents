@@ -6,6 +6,7 @@
     "dev": "python3 run_dev.py",
     "dev:all": "python3 run_dev.py --app all",
     "dev:customer": "python3 run_dev.py --app customer",
-    "dev:staff": "python3 run_dev.py --app staff"
+    "dev:staff": "python3 run_dev.py --app staff",
+    "build:customer": "cd customer-agent && npm run build"
   }
 }

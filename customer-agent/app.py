@@ -58,6 +58,17 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
+if (BASE_DIR / "static" / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=BASE_DIR / "static" / "assets"), name="assets")
+
+
+@app.get("/octapus-logo.jpg")
+def octapus_logo():
+    logo_path = BASE_DIR / "static" / "octapus-logo.jpg"
+    if logo_path.exists():
+        return FileResponse(logo_path, media_type="image/jpeg")
+    raise HTTPException(status_code=404, detail="Logo not found")
+
 from typing import Optional
 
 # In-memory store. Replace with a database (Redis, Postgres) in production.
