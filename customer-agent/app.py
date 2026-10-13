@@ -13,11 +13,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from media import MediaPipeline, TTSHandler
+from media import MediaPipeline, TTSHandler, BlandHandler
 
 logger = logging.getLogger("octapus.customer_agent")
 media_pipeline = MediaPipeline()
 tts_handler = TTSHandler()
+bland_handler = BlandHandler()
 
 BASE_DIR = Path(__file__).parent
 
@@ -143,6 +144,11 @@ def health():
         "app": "octapus-customer-agent",
         "model": MODEL,
         "database": db.get_db_stats(),
+        "capabilities": {
+            "tts": tts_handler.is_configured,
+            "bland_ai": bland_handler.is_configured,
+            "media_pipeline": True,
+        },
     }
 
 
@@ -285,6 +291,68 @@ def generate_tts(body: dict):
     if not data_url:
         raise HTTPException(status_code=502, detail="TTS synthesis failed or unconfigured")
     return {"status": "success", "audio_url": data_url}
+
+
+@app.post("/api/call")
+def trigger_phone_call(body: dict):
+    """Initiate an outbound conversational AI phone call via Bland.ai."""
+    if not bland_handler.is_configured:
+        raise HTTPException(status_code=503, detail="Bland.ai calling service is not configured")
+    phone = (body.get("phone_number") or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="phone_number is required")
+    task = body.get("task") or (
+        "You are an AI assistant calling on behalf of Octapus LLC. "
+        "Politely greet the customer, ask how Octapus can assist them with their software, payments, "
+        "or WhatsApp automation needs, and answer based on Octapus company details."
+    )
+    first_sentence = body.get("first_sentence")
+    language = body.get("language") or "en"
+    voice = body.get("voice")
+    record = body.get("record", True)
+    metadata = body.get("metadata")
+
+    res = bland_handler.send_call(
+        phone_number=phone,
+        task=task,
+        first_sentence=first_sentence,
+        language=language,
+        voice=voice,
+        record=record,
+        metadata=metadata,
+    )
+    if res.get("status") != "success":
+        raise HTTPException(status_code=502, detail=res.get("message") or "Call initiation failed")
+    return res
+
+
+@app.get("/api/call/{call_id}")
+def get_call_info(call_id: str):
+    """Retrieve call status, recording, and transcript from Bland.ai."""
+    if not bland_handler.is_configured:
+        raise HTTPException(status_code=503, detail="Bland.ai calling service is not configured")
+    res = bland_handler.get_call_details(call_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=res.get("code", 502), detail=res.get("message"))
+    return res
+
+
+@app.get("/api/bland/account")
+def get_bland_account():
+    """Retrieve Bland.ai account status and balance."""
+    if not bland_handler.is_configured:
+        raise HTTPException(status_code=503, detail="Bland.ai calling service is not configured")
+    return bland_handler.get_account_info()
+
+
+@app.post("/api/call/webhook")
+def bland_call_webhook(payload: dict):
+    """Webhook listener for Bland.ai post-call transcripts and event summaries."""
+    call_id = payload.get("call_id")
+    summary = payload.get("summary")
+    logger.info("Bland.ai call webhook received for call_id=%s: %s", call_id, summary)
+    return {"status": "received", "call_id": call_id}
+
 
 
 @app.get("/sessions")

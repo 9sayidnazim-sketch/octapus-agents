@@ -13,6 +13,7 @@ from .detector import detect_message_type, sanitize_payload
 from .document_handler import DocumentHandler
 from .downloader import MediaDownloader
 from .image_handler import ImageHandler
+from .bland_handler import BlandHandler
 from .pipeline import FALLBACK_ERROR_MESSAGE, MediaPipeline
 from .tts_handler import TTSHandler
 
@@ -25,5 +26,7 @@ __all__ = [
     "DocumentHandler",
     "MediaPipeline",
     "TTSHandler",
+    "BlandHandler",
     "FALLBACK_ERROR_MESSAGE",
 ]
+
