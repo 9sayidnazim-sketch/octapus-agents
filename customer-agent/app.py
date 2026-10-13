@@ -14,12 +14,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from media import MediaPipeline, TTSHandler, BlandHandler, EmailHandler
+from reminders import ReminderService, PersistentReminderScheduler
 
 logger = logging.getLogger("octapus.customer_agent")
 media_pipeline = MediaPipeline()
 tts_handler = TTSHandler()
 bland_handler = BlandHandler()
 email_handler = EmailHandler()
+reminder_service = ReminderService()
+reminder_scheduler = PersistentReminderScheduler()
 
 BASE_DIR = Path(__file__).parent
 
@@ -190,12 +193,78 @@ def reset_chat(body: dict):
     return {"status": "cleared"}
 
 
+def handle_reminder_intent(session_id: str, message: str) -> Optional[str]:
+    """Recognize and execute reminder & follow-up commands in natural Manglish/English."""
+    user_id = session_id.replace("whatsapp-", "")
+    norm = message.lower().strip()
+
+    # 1. List active reminders
+    if any(p in norm for p in ["list reminder", "reminders list", "ente reminders", "active reminders", "show reminders"]):
+        rems = reminder_service.list_reminders(user_id=user_id, status="scheduled")
+        if not rems:
+            return "Sheri, ippo active reminders onnumilla."
+        lines = ["Sheri, active reminders ivayokkeyaanu:"]
+        for r in rems[:5]:
+            lines.append(f"- {r['title']} ({r['date']} {r['time']})")
+        return "\n".join(lines)
+
+    # 2. Cancel reminder
+    if any(p in norm for p in ["cancel reminder", "reminder cancel", "stop reminder"]):
+        rems = reminder_service.list_reminders(user_id=user_id, status="scheduled")
+        if not rems:
+            return "Sheri, cancel cheyyaan active reminders onnumilla."
+        cancelled = reminder_service.cancel_reminder(rems[0]["id"], user_id=user_id)
+        if cancelled:
+            return f"Sheri, '{rems[0]['title']}' reminder cancel cheythu."
+        return "Sheri, reminder cancel cheyyaan pattiyilla."
+
+    # 3. Snooze reminder
+    if "snooze" in norm:
+        rems = reminder_service.list_reminders(user_id=user_id)
+        active = [r for r in rems if r["status"] in ("scheduled", "in_flight", "delivered", "awaiting_reply")]
+        if active:
+            res = reminder_service.snooze_reminder(active[0]["id"], user_id=user_id, minutes=15)
+            if res:
+                return f"Sheri, '{active[0]['title']}' 15 minutes-kku snooze cheythu."
+        return "Sheri, snooze cheyyaan reminders onnumilla."
+
+    # 4. Create / Schedule Reminder
+    if any(w in norm for w in ["remind cheyy", "remind me", "reminder set", "remind"]) and not norm.startswith("why"):
+        channel = "whatsapp" if session_id.startswith("whatsapp-") else "web"
+        res = reminder_service.create_from_natural_text(
+            user_id=user_id,
+            text=message,
+            channel=channel,
+            recipient=user_id,
+        )
+        if res.get("needs_clarification"):
+            return res.get("clarification_question") or "Ravile ethra manikkaanu remind cheyyendath?"
+        if res.get("success"):
+            rem = res["reminder"]
+            t = rem["time"][:5]
+            title = rem["title"]
+            if "nale" in norm or "naale" in norm:
+                return f"Sheri, naale {t}-nu '{title}' reminder set cheythu."
+            elif "innu" in norm:
+                return f"Sheri, innu {t}-nu '{title}' reminder set cheythu."
+            return f"Sheri, {rem['date']} {t}-nu '{title}' reminder set cheythu."
+
+    return None
+
+
 def call_horus(
     session_id: str,
     user_message: str,
     content_blocks: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Execute Horus reasoning with optional multimodal image blocks and persist history."""
+    if not content_blocks:
+        fast_reply = handle_reminder_intent(session_id=session_id, message=user_message)
+        if fast_reply:
+            db.save_message(session_id=session_id, role="user", content=user_message)
+            db.save_message(session_id=session_id, role="assistant", content=fast_reply)
+            return fast_reply
+
     db.save_message(session_id=session_id, role="user", content=user_message)
     history = db.get_history(session_id, limit=MAX_TURNS)
 
@@ -445,4 +514,133 @@ def get_session_messages(session_id: str, limit: int = 50):
 @app.get("/db/stats")
 def get_database_stats():
     return db.get_db_stats()
+
+
+# ==============================================================================
+# REMINDER & PROACTIVE CARE ENDPOINTS
+# ==============================================================================
+
+@app.on_event("startup")
+def on_app_startup():
+    db.init_db()
+    reminder_scheduler.start()
+
+
+@app.on_event("shutdown")
+def on_app_shutdown():
+    reminder_scheduler.stop()
+
+
+@app.post("/api/reminders")
+def create_reminder_endpoint(body: dict):
+    """Create or schedule a reminder using faresemad/Reminders-API and persistent SQLite metadata."""
+    user_id = body.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="'user_id' is required")
+
+    # Natural text path
+    if body.get("natural_text"):
+        res = reminder_service.create_from_natural_text(
+            user_id=user_id,
+            text=body["natural_text"],
+            default_title=body.get("title"),
+            channel=body.get("channel", "whatsapp"),
+            recipient=body.get("recipient"),
+        )
+        if res.get("needs_clarification"):
+            return {
+                "status": "clarification_needed",
+                "question": res.get("clarification_question"),
+            }
+        return {"status": "scheduled", "reminder": res["reminder"]}
+
+    # Explicit fields path
+    title = body.get("title")
+    date_str = body.get("date")
+    time_str = body.get("time")
+    if not title or not date_str or not time_str:
+        raise HTTPException(status_code=400, detail="'title', 'date' (YYYY-MM-DD), and 'time' (HH:MM[:SS]) are required")
+
+    try:
+        rem = reminder_service.create_reminder(
+            user_id=user_id,
+            title=title,
+            date_str=date_str,
+            time_str=time_str,
+            notes=body.get("notes", ""),
+            user_timezone=body.get("timezone", "Asia/Dubai"),
+            priority=body.get("priority", "low"),
+            recurrence=body.get("recurrence", "none"),
+            channel=body.get("channel", "whatsapp"),
+            recipient=body.get("recipient"),
+            follow_up_enabled=body.get("follow_up_enabled", True),
+            max_follow_ups=body.get("max_follow_ups", 2),
+            follow_up_interval_minutes=body.get("follow_up_interval_minutes", 60),
+        )
+        return {"status": "scheduled", "reminder": rem}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/reminders")
+def list_reminders_endpoint(user_id: str, status: Optional[str] = None):
+    """List reminders belonging to an authenticated user."""
+    rems = reminder_service.list_reminders(user_id=user_id, status=status)
+    return {"user_id": user_id, "reminders": rems}
+
+
+@app.get("/api/reminders/{reminder_id}")
+def get_reminder_endpoint(reminder_id: str, user_id: str):
+    """Get single reminder details, enforcing user ownership."""
+    rem = reminder_service.get_reminder(reminder_id, user_id)
+    if not rem:
+        raise HTTPException(status_code=404, detail="Reminder not found or unauthorized")
+    return rem
+
+
+@app.delete("/api/reminders/{reminder_id}")
+def cancel_reminder_endpoint(reminder_id: str, user_id: str):
+    """Cancel a scheduled reminder."""
+    success = reminder_service.cancel_reminder(reminder_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Reminder not found or unauthorized")
+    return {"status": "cancelled", "reminder_id": reminder_id}
+
+
+@app.post("/api/reminders/{reminder_id}/snooze")
+def snooze_reminder_endpoint(reminder_id: str, body: dict):
+    """Snooze a reminder by postponing its scheduled delivery time."""
+    user_id = body.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="'user_id' is required")
+    minutes = body.get("minutes", 15)
+    rem = reminder_service.snooze_reminder(reminder_id, user_id, minutes=minutes)
+    if not rem:
+        raise HTTPException(status_code=404, detail="Reminder not found or unauthorized")
+    return {"status": "snoozed", "reminder": rem}
+
+
+@app.post("/api/reminders/{reminder_id}/complete")
+def complete_reminder_endpoint(reminder_id: str, body: dict):
+    """Mark a reminder complete and cancel future follow-ups."""
+    user_id = body.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="'user_id' is required")
+    success = reminder_service.complete_reminder(reminder_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Reminder not found or unauthorized")
+    return {"status": "completed", "reminder_id": reminder_id}
+
+
+@app.get("/api/reminders/preferences/{user_id}")
+def get_preferences_endpoint(user_id: str):
+    """Get user timezone and proactive care preferences."""
+    return reminder_service.get_user_preferences(user_id)
+
+
+@app.put("/api/reminders/preferences/{user_id}")
+def save_preferences_endpoint(user_id: str, body: dict):
+    """Update user timezone, quiet hours, and follow-up preferences."""
+    prefs = reminder_service.save_user_preferences(user_id, body)
+    return prefs
 
