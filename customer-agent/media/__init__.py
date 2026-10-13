@@ -14,6 +14,7 @@ from .document_handler import DocumentHandler
 from .downloader import MediaDownloader
 from .image_handler import ImageHandler
 from .bland_handler import BlandHandler
+from .email_handler import EmailHandler
 from .pipeline import FALLBACK_ERROR_MESSAGE, MediaPipeline
 from .tts_handler import TTSHandler
 
@@ -27,6 +28,8 @@ __all__ = [
     "MediaPipeline",
     "TTSHandler",
     "BlandHandler",
+    "EmailHandler",
     "FALLBACK_ERROR_MESSAGE",
 ]
+
 

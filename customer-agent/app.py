@@ -13,12 +13,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from media import MediaPipeline, TTSHandler, BlandHandler
+from media import MediaPipeline, TTSHandler, BlandHandler, EmailHandler
 
 logger = logging.getLogger("octapus.customer_agent")
 media_pipeline = MediaPipeline()
 tts_handler = TTSHandler()
 bland_handler = BlandHandler()
+email_handler = EmailHandler()
 
 BASE_DIR = Path(__file__).parent
 
@@ -166,6 +167,7 @@ def health():
         "capabilities": {
             "tts": tts_handler.is_configured,
             "bland_ai": bland_handler.is_configured,
+            "email": email_handler.is_configured,
             "media_pipeline": True,
         },
     }
@@ -378,6 +380,51 @@ def bland_call_webhook(payload: dict):
     summary = payload.get("summary")
     logger.info("Bland.ai call webhook received for call_id=%s: %s", call_id, summary)
     return {"status": "received", "call_id": call_id}
+
+
+@app.post("/api/email")
+def send_email_endpoint(body: dict):
+    """Send an email via Resend API."""
+    if not email_handler.is_configured:
+        raise HTTPException(status_code=503, detail="Email service (Resend) is not configured")
+    to = body.get("to")
+    if not to:
+        raise HTTPException(status_code=400, detail="'to' recipient email is required")
+    subject = body.get("subject")
+    if not subject:
+        raise HTTPException(status_code=400, detail="'subject' is required")
+    text = body.get("text") or body.get("body")
+    html = body.get("html")
+    from_email = body.get("from")
+    reply_to = body.get("reply_to")
+    cc = body.get("cc")
+    bcc = body.get("bcc")
+
+    res = email_handler.send_email(
+        to=to,
+        subject=subject,
+        text=text,
+        html=html,
+        from_email=from_email,
+        reply_to=reply_to,
+        cc=cc,
+        bcc=bcc,
+    )
+    if res.get("status") != "success":
+        raise HTTPException(status_code=502, detail=res.get("message") or "Email delivery failed")
+    return res
+
+
+@app.get("/api/email/{email_id}")
+def get_email_info(email_id: str):
+    """Retrieve email delivery status from Resend."""
+    if not email_handler.is_configured:
+        raise HTTPException(status_code=503, detail="Email service (Resend) is not configured")
+    res = email_handler.get_email_status(email_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=res.get("code", 502), detail=res.get("message"))
+    return res
+
 
 
 

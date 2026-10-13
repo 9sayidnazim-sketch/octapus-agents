@@ -95,9 +95,35 @@ TOOLS = [
             "required": ["phone_number", "task"],
         },
     },
+    {
+        "name": "send_email",
+        "description": "Send an email to a client, lead, or staff member using Resend.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "to": {
+                    "type": "string",
+                    "description": "Recipient email address (e.g. client@example.com).",
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Subject line of the email.",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Plain text content of the email.",
+                },
+                "html": {
+                    "type": "string",
+                    "description": "Optional HTML formatted content for the email.",
+                },
+            },
+            "required": ["to", "subject", "body"],
+        },
+    },
 ]
 
-WRITE_TOOLS = {"create_lead", "make_phone_call"}
+WRITE_TOOLS = {"create_lead", "make_phone_call", "send_email"}
 
 
 def is_affirmative(text: str) -> bool:
@@ -211,5 +237,56 @@ def dispatch_tool(
             except Exception as exc:
                 return {"status": "error", "message": str(exc)}
 
+    if name == "send_email":
+        if not is_confirmed:
+            session["pending_action"] = {
+                "tool_name": "send_email",
+                "tool_input": tool_input,
+            }
+            return {
+                "status": "pending_confirmation",
+                "requires_confirmation": True,
+                "message": (
+                    "Email staged. Do NOT send yet. "
+                    "You MUST show the recipient, subject, and message preview to the user and ask for confirmation with an explicit 'yes'."
+                ),
+                "payload": tool_input,
+            }
+        else:
+            session["pending_action"] = None
+            import os
+            import httpx
+
+            resend_key = os.environ.get("RESEND_API_KEY", "")
+            if not resend_key:
+                return {"error": "Resend API key is not configured"}
+            from_email = os.environ.get("RESEND_FROM", "Octapus AI <onboarding@resend.dev>")
+            to_email = str(tool_input.get("to", "")).strip()
+            subject = str(tool_input.get("subject", "")).strip()
+            body_text = str(tool_input.get("body", "")).strip()
+            html_text = tool_input.get("html")
+            payload = {
+                "from": from_email,
+                "to": [to_email],
+                "subject": subject,
+                "text": body_text,
+            }
+            if html_text:
+                payload["html"] = html_text
+            try:
+                with httpx.Client(timeout=15.0) as client:
+                    resp = client.post(
+                        "https://api.resend.com/emails",
+                        json=payload,
+                        headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                    )
+                    if resp.status_code in (200, 201):
+                        data = resp.json()
+                        return {"status": "success", "id": data.get("id"), "message": f"Email successfully sent to {to_email}"}
+                    return {"status": "error", "code": resp.status_code, "message": resp.text[:200]}
+            except Exception as exc:
+                return {"status": "error", "message": str(exc)}
+
     return {"error": f"Unknown tool: {name}"}
+
 
