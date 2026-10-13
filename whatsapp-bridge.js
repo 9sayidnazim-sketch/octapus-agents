@@ -2,14 +2,15 @@ import "dotenv/config";
 import express from "express";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Configuration from environment or defaults
 const GATEWAY = process.env.ORBIT_API_URL || process.env.GATEWAY_URL || "http://localhost:8098";
-const API_KEY = process.env.ORBIT_INSTANCE_TOKEN || process.env.GATEWAY_API_KEY || "cc12f98a-6ed1-4722-9554-b2b7e5d05d3a";
-const INSTANCE_ID = process.env.ORBIT_INSTANCE_ID || "a43800f4-96bc-4b9a-b588-de15137ef093";
-const ACCOUNT_PHONE = process.env.ORBIT_PHONE_NUMBER || "639562441681";
+const API_KEY = process.env.ORBIT_INSTANCE_TOKEN || process.env.GATEWAY_API_KEY || process.env.WA_API_KEY || "";
+const INSTANCE_ID = process.env.ORBIT_INSTANCE_ID || "";
+const ACCOUNT_PHONE = process.env.ORBIT_PHONE_NUMBER || "";
+const ADMIN_KEY = process.env.ORBIT_GLOBAL_API_KEY || process.env.ORBIT_ADMIN_KEY || "";
 const AGENT_URL = process.env.AGENT_URL || "http://localhost:8000/chat";
 const PORT = process.env.BRIDGE_PORT || 3000;
 
@@ -40,6 +41,22 @@ function enqueueUserTask(userId, task) {
   return next;
 }
 
+// Sanitize payload for safe logging (redact secrets/tokens/keys)
+function sanitizePayloadForLog(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizePayloadForLog);
+  const copy = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const lk = k.toLowerCase();
+    if (lk.includes("key") || lk.includes("token") || lk.includes("secret") || lk.includes("auth")) {
+      copy[k] = typeof v === "string" && v.length > 8 ? `${v.slice(0, 4)}...[REDACTED]` : "[REDACTED]";
+    } else {
+      copy[k] = sanitizePayloadForLog(v);
+    }
+  }
+  return copy;
+}
+
 // Health check endpoint
 app.get("/health", async (req, res) => {
   let agentHealth = null;
@@ -65,6 +82,7 @@ app.get("/health", async (req, res) => {
       url: AGENT_URL,
       status: agentHealth?.status || "unknown",
     },
+    capabilities: ["text", "image", "audio_ptt", "document"],
     dedup_cache_size: processedMessageIds.size,
     timestamp: new Date().toISOString(),
   });
@@ -92,7 +110,7 @@ app.post("/incoming", async (req, res) => {
       return;
     }
 
-    // 3. Flexible extraction supporting Orbit Gateway structures
+    // 3. Extract message ID for deduplication
     const messageId =
       body.data?.Info?.ID ||
       body.data?.Info?.Id ||
@@ -165,111 +183,209 @@ app.post("/incoming", async (req, res) => {
       return;
     }
 
-    // 8. Extract incoming text content
+    // 8. Detect Message Type (text, image, audio/ptt, document, video, sticker)
+    const msg = body.data?.Message || body.data?.message || body.message || {};
+    const isImage = Boolean(msg.imageMessage);
+    const isAudio = Boolean(msg.audioMessage);
+    const isDoc = Boolean(msg.documentMessage);
+    const isVideo = Boolean(msg.videoMessage);
+    const isSticker = Boolean(msg.stickerMessage);
+    const hasMedia = isImage || isAudio || isDoc || isVideo || isSticker;
+
+    let detectedType = "text";
+    if (isImage) detectedType = "image";
+    else if (isAudio) detectedType = msg.audioMessage?.ptt ? "audio (ptt/voice note)" : "audio";
+    else if (isDoc) detectedType = "document";
+    else if (isVideo) detectedType = "video";
+    else if (isSticker) detectedType = "sticker";
+
+    // Extract text/caption if present
     const text =
-      body.data?.Message?.conversation ||
-      body.data?.Message?.extendedTextMessage?.text ||
-      body.data?.Message?.imageMessage?.caption ||
-      body.data?.Message?.videoMessage?.caption ||
-      body.data?.Message?.documentMessage?.caption ||
-      body.data?.message?.conversation ||
-      body.data?.message?.extendedTextMessage?.text ||
-      body.data?.message?.imageMessage?.caption ||
+      msg.conversation ||
+      msg.extendedTextMessage?.text ||
+      msg.imageMessage?.caption ||
+      msg.videoMessage?.caption ||
+      msg.documentMessage?.caption ||
       body.text ||
-      body.message?.conversation ||
-      body.message?.text ||
       (typeof body.message === "string" ? body.message : undefined);
 
-    if (!text || !text.trim()) {
+    // Log the raw incoming payload safely (secrets removed)
+    const sanitizedLog = sanitizePayloadForLog(body);
+    console.log(
+      `📩 [WhatsApp Ingest] [${cleanNumber}] Type: ${detectedType} | Payload: ${JSON.stringify(sanitizedLog).slice(0, 320)}...`
+    );
+
+    if (!text && !hasMedia) {
       return;
     }
-
-    const cleanText = text.trim();
-    console.log(`📩 [WhatsApp Ingest] [${cleanNumber}]: "${cleanText.replace(/\n/g, " ")}"`);
 
     // 9. Serialize message processing per conversation queue
     const incomingToken = body.instanceToken || body.token || API_KEY;
     enqueueUserTask(cleanNumber, async () => {
-      // Query Horus AI Agent
-      const reply = await askAgent(cleanNumber, cleanText);
-      console.log(`🤖 [Horus Reply] To: ${cleanNumber} | "${reply.slice(0, 100).replace(/\n/g, " ")}..."`);
+      // Instantly trigger "typing..." presence on WhatsApp so the user gets immediate visual feedback
+      sendPresence(cleanNumber, "composing", incomingToken);
 
-      // Dispatch reply via Orbit Gateway with bounded retries
-      await sendGatewayReply(cleanNumber, reply, incomingToken);
+      let reply = "";
+
+      // Call Horus Customer Agent's multimodal webhook endpoint
+      try {
+        const webhookUrl = `${AGENT_URL.replace("/chat", "")}/webhook`;
+        const agentRes = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        if (agentRes.ok) {
+          const resData = await agentRes.json();
+          if (resData.status === "ignored") {
+            sendPresence(cleanNumber, "paused", incomingToken);
+            return;
+          }
+          reply = resData.reply;
+        } else {
+          console.warn(`⚠️ [Agent Webhook HTTP ${agentRes.status}]`);
+        }
+      } catch (err) {
+        console.error(`⚠️ [Agent Webhook Error for ${cleanNumber}]:`, err.message);
+      }
+
+      // Fallback if webhook didn't provide a reply
+      if (!reply) {
+        if (hasMedia) {
+          reply = "I couldn't open that file, can you send it again?";
+        } else if (text) {
+          reply = await askAgent(cleanNumber, text.trim());
+        }
+      }
+
+      if (reply) {
+        console.log(`🤖 [Horus Reply] To: ${cleanNumber} | "${reply.slice(0, 100).replace(/\n/g, " ")}..."`);
+        await sendGatewayReply(cleanNumber, reply, incomingToken);
+      }
+
+      // Clear presence once replied
+      sendPresence(cleanNumber, "paused", incomingToken);
     });
   } catch (err) {
     console.error("💥 [Webhook Ingestion Error]:", err.message);
   }
 });
 
+let cachedActiveToken = null;
+let lastTokenCheck = 0;
+
 /**
- * Queries Horus AI Customer Agent API
- * Preserves persistent SQLite session history per phone number
+ * Discovers the currently connected WhatsApp instance token from Orbit
  */
-async function askAgent(userId, text) {
+async function getActiveToken() {
+  const now = Date.now();
+  if (cachedActiveToken && now - lastTokenCheck < 15000) {
+    return cachedActiveToken;
+  }
+  const adminKey = ADMIN_KEY;
+  if (!adminKey) return API_KEY;
   try {
-    const response = await fetch(AGENT_URL, {
+    const res = await fetch(`${GATEWAY}/instance/all`, {
+      headers: { apikey: adminKey },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const instances = data.data || [];
+      const connected = instances.find((i) => i.connected === true);
+      if (connected && connected.token) {
+        cachedActiveToken = connected.token;
+        lastTokenCheck = now;
+        return connected.token;
+      }
+    }
+  } catch (err) {
+    // Non-critical fallback
+  }
+  return API_KEY;
+}
+
+/**
+ * Dispatches chat presence ("composing" / "paused") to Orbit Gateway
+ * Non-blocking fire-and-forget for instant perception
+ */
+async function sendPresence(number, state = "composing", apiKey = API_KEY) {
+  if (!number) return;
+  try {
+    const activeToken = await getActiveToken();
+    fetch(`${GATEWAY}/message/presence`, {
       method: "POST",
       headers: {
+        apikey: activeToken || apiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        message: text,
-        session_id: `whatsapp-${userId}`,
+        number: number,
+        state: state,
+        delay: 10000,
       }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Customer Agent returned HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.reply || "Thank you for reaching out. How can I help you today?";
+      signal: AbortSignal.timeout(3000),
+    }).catch(() => {});
   } catch (err) {
-    console.error(`⚠️ [Agent Call Error for ${userId}]:`, err.message);
-    return "Thank you for reaching out to Octapus. Our assistant is momentarily checking information. Please leave your requirement or contact us at info@octapus.ae.";
+    // ignore
   }
 }
 
 /**
  * Dispatches message via Orbit Gateway using bounded exponential retries
+ * Automatically prioritizes currently connected WhatsApp instances
  */
-async function sendGatewayReply(number, text, apiKey = API_KEY, maxRetries = 3) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(`${GATEWAY}/send/text`, {
-        method: "POST",
-        headers: {
-          apikey: apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          number: number,
-          text: text,
-        }),
-      });
+async function sendGatewayReply(number, text, apiKey = API_KEY, maxRetries = 2) {
+  const activeToken = await getActiveToken();
+  const candidateKeys = Array.from(
+    new Set([
+      activeToken,
+      apiKey,
+      process.env.ORBIT_INSTANCE_TOKEN,
+      process.env.GATEWAY_API_KEY,
+      process.env.WA_API_KEY,
+    ])
+  ).filter(Boolean);
 
-      if (response.ok) {
-        console.log(`✅ [Gateway Sent] Delivered reply to ${number}`);
-        return true;
+  for (const token of candidateKeys) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${GATEWAY}/send/text`, {
+          method: "POST",
+          headers: {
+            apikey: token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            number: number,
+            text: text,
+          }),
+          signal: AbortSignal.timeout(4000),
+        });
+
+        if (response.ok) {
+          console.log(`✅ [Gateway Sent] Delivered reply to ${number}`);
+          return true;
+        }
+
+        const errText = await response.text();
+        console.warn(`⚠️ [Gateway Status ${response.status} on key ${token.slice(0, 6)}...]: ${errText.slice(0, 100)}`);
+      } catch (err) {
+        console.warn(`⚠️ [Gateway Network Error on key ${token.slice(0, 6)}...]:`, err.message);
       }
 
-      const errText = await response.text();
-      console.warn(`⚠️ [Gateway Retry ${attempt}/${maxRetries}] Status ${response.status}: ${errText.slice(0, 120)}`);
-    } catch (err) {
-      console.warn(`⚠️ [Gateway Error ${attempt}/${maxRetries}]:`, err.message);
-    }
-
-    if (attempt < maxRetries) {
-      await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 150 * Math.pow(2, attempt - 1)));
+      }
     }
   }
 
-  console.error(`❌ [Gateway Send Failed] Delivery failed for ${number} after ${maxRetries} attempts.`);
+  console.error(`❌ [Gateway Send Failed] Delivery failed for ${number} after trying candidate tokens.`);
   return false;
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   const maskedToken = API_KEY ? `${API_KEY.slice(0, 6)}...${API_KEY.slice(-4)}` : "NOT_SET";
   console.log(`
 =============================================================
@@ -281,6 +397,11 @@ app.listen(PORT, () => {
 • Gateway URL:      ${GATEWAY}
 • Gateway Token:    ${maskedToken}
 • Agent Endpoint:   ${AGENT_URL}
+• Capabilities:     Text, Images (Vision/OCR), Voice Notes (STT), Docs (PDF/DOCX)
 =============================================================
 `);
+});
+
+server.on("error", (err) => {
+  console.error(`❌ [Bridge Server Error]:`, err.message);
 });
