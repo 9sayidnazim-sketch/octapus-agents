@@ -226,6 +226,7 @@ app.post("/incoming", async (req, res) => {
       sendPresence(cleanNumber, "composing", incomingToken);
 
       let reply = "";
+      let audioUrl = null;
 
       // Call Horus Customer Agent's multimodal webhook endpoint
       try {
@@ -243,6 +244,7 @@ app.post("/incoming", async (req, res) => {
             return;
           }
           reply = resData.reply;
+          audioUrl = resData.audio_url || null;
         } else {
           console.warn(`⚠️ [Agent Webhook HTTP ${agentRes.status}]`);
         }
@@ -262,6 +264,11 @@ app.post("/incoming", async (req, res) => {
       if (reply) {
         console.log(`🤖 [Horus Reply] To: ${cleanNumber} | "${reply.slice(0, 100).replace(/\n/g, " ")}..."`);
         await sendGatewayReply(cleanNumber, reply, incomingToken);
+      }
+
+      if (audioUrl) {
+        console.log(`🔊 [Horus Voice Reply] Sending voice note to ${cleanNumber}`);
+        await sendGatewayMedia(cleanNumber, "audio", audioUrl, incomingToken);
       }
 
       // Clear presence once replied
@@ -382,6 +389,60 @@ async function sendGatewayReply(number, text, apiKey = API_KEY, maxRetries = 2) 
   }
 
   console.error(`❌ [Gateway Send Failed] Delivery failed for ${number} after trying candidate tokens.`);
+  return false;
+}
+
+/**
+ * Dispatches media (audio/voice note, image, etc.) via Orbit Gateway
+ */
+async function sendGatewayMedia(number, type = "audio", url, apiKey = API_KEY, maxRetries = 2) {
+  const activeToken = await getActiveToken();
+  const candidateKeys = Array.from(
+    new Set([
+      activeToken,
+      apiKey,
+      process.env.ORBIT_INSTANCE_TOKEN,
+      process.env.GATEWAY_API_KEY,
+      process.env.WA_API_KEY,
+    ])
+  ).filter(Boolean);
+
+  for (const token of candidateKeys) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${GATEWAY}/send/media`, {
+          method: "POST",
+          headers: {
+            apikey: token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            number: number,
+            type: type,
+            url: url,
+            caption: "",
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (response.ok) {
+          console.log(`✅ [Gateway Sent] Delivered ${type} media to ${number}`);
+          return true;
+        }
+
+        const errText = await response.text();
+        console.warn(`⚠️ [Gateway Media Status ${response.status} on key ${token.slice(0, 6)}...]: ${errText.slice(0, 100)}`);
+      } catch (err) {
+        console.warn(`⚠️ [Gateway Media Network Error]:`, err.message);
+      }
+
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
+      }
+    }
+  }
+
+  console.error(`❌ [Gateway Media Send Failed] Failed delivering ${type} to ${number}`);
   return false;
 }
 

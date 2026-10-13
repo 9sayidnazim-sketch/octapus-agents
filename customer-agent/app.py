@@ -13,10 +13,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from media import MediaPipeline
+from media import MediaPipeline, TTSHandler
 
 logger = logging.getLogger("octapus.customer_agent")
 media_pipeline = MediaPipeline()
+tts_handler = TTSHandler()
 
 BASE_DIR = Path(__file__).parent
 
@@ -240,12 +241,19 @@ async def whatsapp_webhook(request: Request):
             user_message=user_text,
             content_blocks=content_blocks,
         )
+        audio_url = None
+        tts_mode = os.environ.get("TTS_MODE", "voice_on_voice").lower()
+        is_audio = res.get("type") == "audio" or "[voice note transcript]" in user_text.lower()
+        if tts_handler.is_configured and (tts_mode == "always" or (tts_mode == "voice_on_voice" and is_audio)):
+            audio_url = tts_handler.synthesize_data_url(reply)
+
         return {
             "status": "success",
             "reply": reply,
             "clean_number": clean_number,
             "session_id": session_id,
             "media_type": res.get("type"),
+            "audio_url": audio_url,
         }
     except Exception as exc:
         logger.error("Horus inference error for %s: %s", clean_number, exc)
@@ -256,6 +264,17 @@ async def whatsapp_webhook(request: Request):
             "session_id": session_id,
             "error": str(exc),
         }
+
+
+@app.post("/api/tts")
+def generate_tts(body: dict):
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+    data_url = tts_handler.synthesize_data_url(text, voice_id=body.get("voice_id"))
+    if not data_url:
+        raise HTTPException(status_code=502, detail="TTS synthesis failed or unconfigured")
+    return {"status": "success", "audio_url": data_url}
 
 
 @app.get("/sessions")

@@ -14,6 +14,7 @@ from .document_handler import DocumentHandler
 from .downloader import MediaDownloader
 from .image_handler import ImageHandler
 from .pipeline import FALLBACK_ERROR_MESSAGE, MediaPipeline
+from .tts_handler import TTSHandler
 
 __all__ = [
     "detect_message_type",
@@ -23,5 +24,6 @@ __all__ = [
     "ImageHandler",
     "DocumentHandler",
     "MediaPipeline",
+    "TTSHandler",
     "FALLBACK_ERROR_MESSAGE",
 ]
