@@ -5,6 +5,7 @@ import { HeroState } from "@/components/HeroState";
 import { ChatMessage, type Message } from "@/components/ChatMessage";
 import { ChatInput } from "@/components/ChatInput";
 import { AboutModal } from "@/components/AboutModal";
+import { CampaignDashboard } from "@/components/CampaignDashboard";
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -15,6 +16,7 @@ export default function App() {
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [campaignOpen, setCampaignOpen] = useState(false);
   const [recentTopics, setRecentTopics] = useState<string[]>(() => {
     const saved = localStorage.getItem("octapus_recent_topics");
     return saved ? JSON.parse(saved) : [];
@@ -85,7 +87,12 @@ export default function App() {
       const res = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: query, session_id: sessionId }),
+        body: JSON.stringify({
+          message: query,
+          session_id: sessionId,
+          image_data: imageUrl || null,
+          audio_data: audioUrl || null,
+        }),
       });
 
       if (!res.ok) {
@@ -103,6 +110,7 @@ export default function App() {
         sender: "bot",
         text: data.reply || "I am available to assist you with any questions regarding Octapus LLC.",
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        audioUrl: data.audio_url || undefined,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -144,6 +152,7 @@ export default function App() {
         onToggle={() => setSidebarOpen((prev) => !prev)}
         onNewChat={handleClearChat}
         onOpenAbout={() => setAboutOpen(true)}
+        onOpenCampaign={() => setCampaignOpen(true)}
         recentTopics={recentTopics}
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -199,6 +208,9 @@ export default function App() {
 
       {/* About Modal */}
       <AboutModal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} />
+
+      {/* Horus WhatsApp Team Rollout Dashboard */}
+      <CampaignDashboard isOpen={campaignOpen} onClose={() => setCampaignOpen(false)} />
     </div>
   );
 }

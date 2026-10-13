@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import base64
+import json
+import logging
 import os
 import uuid
 from pathlib import Path
-
-import logging
 from typing import Any, Dict, List, Optional
 
 import anthropic
@@ -13,8 +14,23 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from media import MediaPipeline, TTSHandler, BlandHandler, EmailHandler
+from media import (
+    MediaPipeline,
+    TTSHandler,
+    BlandHandler,
+    EmailHandler,
+    clean_for_speech,
+    detect_voice_intent,
+)
 from reminders import ReminderService, PersistentReminderScheduler
+from tools import DocumentGenerator, create_default_registry
+
+try:
+    from . import db
+    from .campaigns import CampaignWorkflowManager, RecipientValidator
+except ImportError:
+    import db
+    from campaigns import CampaignWorkflowManager, RecipientValidator
 
 logger = logging.getLogger("octapus.customer_agent")
 media_pipeline = MediaPipeline()
@@ -23,6 +39,7 @@ bland_handler = BlandHandler()
 email_handler = EmailHandler()
 reminder_service = ReminderService()
 reminder_scheduler = PersistentReminderScheduler()
+campaign_manager = CampaignWorkflowManager()
 
 BASE_DIR = Path(__file__).parent
 
@@ -38,6 +55,33 @@ for env_path in (BASE_DIR / ".env", BASE_DIR.parent / ".env"):
 MODEL = os.environ.get("CUSTOMER_AGENT_MODEL") or os.environ.get("HORUS_MODEL") or "claude-sonnet-5-5"
 MAX_TURNS = int(os.environ.get("MAX_HISTORY_TURNS", "10"))
 MAX_RESPONSE_TOKENS = int(os.environ.get("MAX_RESPONSE_TOKENS", "300"))
+
+# Initialize SQLite database
+db.init_db()
+
+doc_generator = DocumentGenerator(output_dir=BASE_DIR / "static" / "generated_docs")
+capability_registry = create_default_registry(
+    reminder_service=reminder_service,
+    db_module=db,
+    doc_generator=doc_generator,
+    bland_handler=bland_handler,
+    email_handler=email_handler,
+    tts_handler=tts_handler,
+    audio_handler=media_pipeline.audio_handler,
+)
+
+
+class HorusResponse(str):
+    """String response subclass carrying audio URL and delivery status."""
+    audio_url: Optional[str] = None
+    audio_status: str = "none"
+
+    def __new__(cls, text: str, audio_url: Optional[str] = None, audio_status: str = "none"):
+        obj = str.__new__(cls, text)
+        obj.audio_url = audio_url
+        obj.audio_status = audio_status
+        return obj
+
 
 # Persistent Anthropic client singleton for connection pooling (avoids TLS handshake latency)
 _client: Optional[anthropic.Anthropic] = None
@@ -70,13 +114,18 @@ COMPANY_INFO = COMPANY_INFO_PATH.read_text(encoding="utf-8") if COMPANY_INFO_PAT
 HORUS_INSTRUCTIONS_PATH = BASE_DIR / "horus_instructions.md"
 HORUS_INSTRUCTIONS = HORUS_INSTRUCTIONS_PATH.read_text(encoding="utf-8") if HORUS_INSTRUCTIONS_PATH.exists() else ""
 
+
 def get_system_prompt(is_whatsapp: bool = False) -> str:
     info = COMPANY_INFO_PATH.read_text(encoding="utf-8") if COMPANY_INFO_PATH.exists() else ""
     instructions = HORUS_INSTRUCTIONS_PATH.read_text(encoding="utf-8") if HORUS_INSTRUCTIONS_PATH.exists() else ""
     instructions_block = f"\n<core_persona_and_skills>\n{instructions}\n</core_persona_and_skills>\n" if instructions else ""
+    capabilities_block = capability_registry.get_system_prompt_capabilities_block()
+    cap_block = f"\n{capabilities_block}\n" if capabilities_block else ""
+
     if is_whatsapp:
         return f"""You are Horus, the warm, mature, and helpful WhatsApp AI assistant for Octapus.
 {instructions_block}
+{cap_block}
 AUTHORIZED MANAGEMENT & VIP NUMBERS:
 - Primary Account Owner / Management: +971525919933
 - Authorized Executive Management: +971508621612
@@ -91,6 +140,7 @@ Use only configured business information and approved tools. Ask a short clarifi
 
     return f"""You are Horus, the warm, mature, and helpful customer assistant for Octapus LLC.
 {instructions_block}
+{cap_block}
 Answer using only the company information below. If the answer is not there,
 say you don't know and direct the customer to info@octapus.ae.
 Never invent prices, policies, or promises. Keep answers short, natural, and friendly.
@@ -143,25 +193,19 @@ def horus_logo():
         return FileResponse(logo_path, media_type="image/jpeg")
     raise HTTPException(status_code=404, detail="Horus image not found")
 
-from typing import Optional
-
-try:
-    from . import db
-except ImportError:
-    import db
-
-# Initialize SQLite database
-db.init_db()
-
 
 class ChatIn(BaseModel):
     message: str
     session_id: Optional[str] = None
+    image_data: Optional[str] = None
+    audio_data: Optional[str] = None
+    attachments: Optional[List[Dict[str, Any]]] = None
 
 
 class ChatOut(BaseModel):
     reply: str
     session_id: str
+    audio_url: Optional[str] = None
 
 
 @app.get("/health")
@@ -171,12 +215,26 @@ def health():
         "app": "octapus-customer-agent",
         "model": MODEL,
         "database": db.get_db_stats(),
-        "capabilities": {
-            "tts": tts_handler.is_configured,
-            "bland_ai": bland_handler.is_configured,
-            "email": email_handler.is_configured,
-            "media_pipeline": True,
-        },
+        "capabilities": capability_registry.get_status_report(),
+        "voice_capabilities": capability_registry.get_runtime_voice_status(),
+        "tts_configured": tts_handler.is_configured,
+        "stt_configured": bool(os.environ.get("STT_API_KEY") or os.environ.get("OPENAI_API_KEY")),
+        "bland_configured": bland_handler.is_configured,
+        "email_configured": email_handler.is_configured,
+    }
+
+
+@app.get("/api/capabilities")
+def get_capabilities():
+    return {
+        "status": "ok",
+        "tools": capability_registry.get_status_report(),
+        "operational_tools": [t.name for t in capability_registry.get_operational_tools()],
+        "voice_capabilities": capability_registry.get_runtime_voice_status(),
+        "tts_configured": tts_handler.is_configured,
+        "stt_configured": bool(os.environ.get("STT_API_KEY") or os.environ.get("OPENAI_API_KEY")),
+        "bland_configured": bland_handler.is_configured,
+        "email_configured": email_handler.is_configured,
     }
 
 
@@ -256,14 +314,70 @@ def call_horus(
     session_id: str,
     user_message: str,
     content_blocks: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    """Execute Horus reasoning with optional multimodal image blocks and persist history."""
+    image_data: Optional[str] = None,
+    is_management: bool = False,
+    is_incoming_audio: bool = False,
+    force_voice: Optional[bool] = None,
+) -> HorusResponse:
+    """Execute Horus reasoning with full tool calling loop, multimodal image support,
+    memory persistence, and single application-managed speech synthesis pipeline."""
+    # 1. Process image_data if provided from web upload
+    if image_data and not content_blocks:
+        try:
+            if image_data.startswith("data:") and ";base64," in image_data:
+                header, b64_part = image_data.split(";base64,", 1)
+                mime = header.replace("data:", "").strip()
+                raw_bytes = base64.b64decode(b64_part)
+            else:
+                raw_bytes = base64.b64decode(image_data)
+                mime = "image/jpeg"
+
+            img_res = media_pipeline.image_handler.process_image(
+                image_bytes=raw_bytes,
+                mimetype=mime,
+                caption=user_message,
+            )
+            content_blocks = img_res["content_blocks"]
+        except Exception as img_err:
+            logger.warning("Failed to decode or process image_data: %s", img_err)
+
+    # Helper to finalize turn with speech synthesis, honest error reporting, and DB persistence
+    def finalize_response(raw_reply: str) -> HorusResponse:
+        wants_voice = detect_voice_intent(
+            text=user_message,
+            is_incoming_audio=is_incoming_audio,
+            force_voice=force_voice,
+        )
+        audio_url = None
+        audio_status = "none"
+        final_text = raw_reply
+
+        if wants_voice:
+            if tts_handler.is_configured:
+                data_url, status, err = tts_handler.synthesize_with_status(raw_reply)
+                audio_status = status
+                if status == "delivered" and data_url:
+                    audio_url = data_url
+                elif status == "generation_failed":
+                    final_text = f"{raw_reply}\n\n(Voice reply could not be generated at the moment; text reply provided above.)"
+            else:
+                audio_status = "unconfigured"
+
+        db.save_message(
+            session_id=session_id,
+            role="assistant",
+            content=final_text,
+            audio_url=audio_url,
+            audio_status=audio_status,
+        )
+        return HorusResponse(final_text, audio_url=audio_url, audio_status=audio_status)
+
+    # 2. Fast-path pure text reminder check (only if no image/attachment and simple text)
     if not content_blocks:
         fast_reply = handle_reminder_intent(session_id=session_id, message=user_message)
         if fast_reply:
             db.save_message(session_id=session_id, role="user", content=user_message)
-            db.save_message(session_id=session_id, role="assistant", content=fast_reply)
-            return fast_reply
+            return finalize_response(fast_reply)
 
     db.save_message(session_id=session_id, role="user", content=user_message)
     history = db.get_history(session_id, limit=MAX_TURNS)
@@ -273,35 +387,138 @@ def call_horus(
     else:
         api_messages = history
 
+    client = get_client()
+    active_system_prompt = get_system_prompt(is_whatsapp=session_id.startswith("whatsapp-"))
+    token_limit = MAX_RESPONSE_TOKENS if session_id.startswith("whatsapp-") else 800
+    tools = capability_registry.get_anthropic_tools()
+
+    clean_number = session_id.replace("whatsapp-", "") if session_id.startswith("whatsapp-") else ""
+    user_id = clean_number or session_id
+    ctx = {
+        "session_id": session_id,
+        "user_id": user_id,
+        "clean_number": clean_number,
+        "is_management": is_management,
+    }
+
+    turn_count = 0
+    max_tool_turns = 5
+    reply = ""
+
     try:
-        client = get_client()
-        active_system_prompt = get_system_prompt(is_whatsapp=session_id.startswith("whatsapp-"))
-        token_limit = MAX_RESPONSE_TOKENS if session_id.startswith("whatsapp-") else 600
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=token_limit,
-            system=active_system_prompt,
-            messages=api_messages,
-        )
-        reply = "".join(b.text for b in response.content if b.type == "text")
+        while turn_count < max_tool_turns:
+            turn_count += 1
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=token_limit,
+                system=active_system_prompt,
+                messages=api_messages,
+                tools=tools if tools else None,
+            )
+
+            if response.stop_reason == "tool_use":
+                tool_calls = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
+                if not tool_calls:
+                    reply = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+                    break
+
+                # Append assistant's turn with all content blocks
+                assistant_content = []
+                for b in response.content:
+                    if getattr(b, "type", None) == "text":
+                        assistant_content.append({"type": "text", "text": b.text})
+                    elif getattr(b, "type", None) == "tool_use":
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": b.id,
+                            "name": b.name,
+                            "input": b.input,
+                        })
+                api_messages.append({"role": "assistant", "content": assistant_content})
+
+                # Execute all tools and collect structured tool_result blocks
+                tool_results = []
+                for tc in tool_calls:
+                    t_name = tc.name
+                    t_args = tc.input
+                    t_id = tc.id
+                    logger.info("Horus invoked capability '%s' (id=%s): %s", t_name, t_id, t_args)
+                    result_data = capability_registry.execute_tool(name=t_name, arguments=t_args, context=ctx)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": t_id,
+                        "content": json.dumps(result_data, ensure_ascii=False),
+                    })
+
+                api_messages.append({"role": "user", "content": tool_results})
+            else:
+                reply = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+                break
+
+        if not reply:
+            reply = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+            if not reply:
+                reply = "Sheri, cheythittundu."
     except Exception as e:
         db.delete_last_message(session_id)  # rollback on failure
         raise e
 
-    db.save_message(session_id=session_id, role="assistant", content=reply)
-    return reply
+    return finalize_response(reply)
 
 
 @app.post("/chat", response_model=ChatOut)
 def chat(body: ChatIn):
-    message = body.message.strip()
-    if not message or len(message) > 4000:
+    message = (body.message or "").strip()
+    session_id = body.session_id or str(uuid.uuid4())
+
+    # Handle web voice recording if audio_data is sent
+    is_incoming_audio = bool(body.audio_data)
+    if body.audio_data and not message:
+        if not (os.environ.get("STT_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+            return ChatOut(
+                reply="Voice note transcription is currently not configured on the server (missing STT_API_KEY). Please send your request as text.",
+                session_id=session_id,
+            )
+        else:
+            try:
+                import tempfile
+                if ";base64," in body.audio_data:
+                    _, b64_part = body.audio_data.split(";base64,", 1)
+                    raw_audio = base64.b64decode(b64_part)
+                else:
+                    raw_audio = base64.b64decode(body.audio_data)
+                with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tf:
+                    tf.write(raw_audio)
+                    tf_path = Path(tf.name)
+                try:
+                    message = media_pipeline.audio_handler.transcribe_audio(tf_path)
+                finally:
+                    tf_path.unlink(missing_ok=True)
+            except Exception as e:
+                logger.error("Failed to transcribe web audio: %s", e)
+                return ChatOut(
+                    reply="I couldn't process the voice note recording. Please try speaking again or send text.",
+                    session_id=session_id,
+                )
+
+    if not message and not body.image_data:
+        raise HTTPException(status_code=400, detail="Message or image attachment is required.")
+
+    if len(message) > 4000:
         raise HTTPException(status_code=400, detail="Message must be 1-4000 characters.")
 
-    session_id = body.session_id or str(uuid.uuid4())
     try:
-        reply = call_horus(session_id=session_id, user_message=message)
-        return ChatOut(reply=reply, session_id=session_id)
+        resp = call_horus(
+            session_id=session_id,
+            user_message=message or "Attached image for review.",
+            image_data=body.image_data,
+            is_incoming_audio=is_incoming_audio,
+        )
+        return ChatOut(
+            reply=str(resp),
+            session_id=session_id,
+            audio_url=getattr(resp, "audio_url", None),
+        )
     except anthropic.APIError as exc:
         logger.error("Anthropic API error: %s", exc)
         raise HTTPException(status_code=502, detail="The assistant is unavailable right now.")
@@ -342,35 +559,23 @@ async def whatsapp_webhook(request: Request):
         user_text = f"[From Verified Management ({clean_number})]: {user_text}"
         logger.info("Recognized authorized management contact: %s", clean_number)
 
-
     try:
-        reply = call_horus(
+        is_audio = res.get("type") == "audio" or "[voice note transcript]" in user_text.lower()
+        resp = call_horus(
             session_id=session_id,
             user_message=user_text,
             content_blocks=content_blocks,
+            is_management=is_management,
+            is_incoming_audio=is_audio,
         )
-        audio_url = None
-        tts_mode = os.environ.get("TTS_MODE", "voice_on_voice").lower()
-        is_audio = res.get("type") == "audio" or "[voice note transcript]" in user_text.lower()
-        requested_audio = any(
-            kw in user_text.lower()
-            for kw in ["voice", "audio", "sudio", "ശബ്ദം", "സംസാരിക്കുക", "speak", "voice note", "audio note", "parayu", "para"]
-        )
-        should_speak = (
-            tts_mode == "always"
-            or (tts_mode == "voice_on_voice" and is_audio)
-            or requested_audio
-        )
-        if tts_handler.is_configured and should_speak:
-            audio_url = tts_handler.synthesize_data_url(reply)
 
         return {
             "status": "success",
-            "reply": reply,
+            "reply": str(resp),
             "clean_number": clean_number,
             "session_id": session_id,
             "media_type": res.get("type"),
-            "audio_url": audio_url,
+            "audio_url": getattr(resp, "audio_url", None),
         }
     except Exception as exc:
         logger.error("Horus inference error for %s: %s", clean_number, exc)
@@ -402,11 +607,15 @@ def trigger_phone_call(body: dict):
     phone = (body.get("phone_number") or "").strip()
     if not phone:
         raise HTTPException(status_code=400, detail="phone_number is required")
-    task = body.get("task") or (
-        "You are an AI assistant calling on behalf of Octapus LLC. "
-        "Politely greet the customer, ask how Octapus can assist them with their software, payments, "
-        "or WhatsApp automation needs, and answer based on Octapus company details."
-    )
+    agent_id = body.get("agent_id")
+    agent_version = body.get("agent_version")
+    task = body.get("task")
+    if not task and not agent_id and not bland_handler.default_agent_id:
+        task = (
+            "You are an AI assistant calling on behalf of Octapus LLC. "
+            "Politely greet the customer, ask how Octapus can assist them with their software, payments, "
+            "or WhatsApp automation needs, and answer based on Octapus company details."
+        )
     first_sentence = body.get("first_sentence")
     language = body.get("language") or "en"
     voice = body.get("voice")
@@ -416,6 +625,8 @@ def trigger_phone_call(body: dict):
     res = bland_handler.send_call(
         phone_number=phone,
         task=task,
+        agent_id=agent_id,
+        agent_version=agent_version,
         first_sentence=first_sentence,
         language=language,
         voice=voice,
@@ -424,6 +635,17 @@ def trigger_phone_call(body: dict):
     )
     if res.get("status") != "success":
         raise HTTPException(status_code=502, detail=res.get("message") or "Call initiation failed")
+    return res
+
+
+@app.get("/api/call/agent/{agent_id}")
+def get_agent_info(agent_id: str):
+    """Retrieve agent details from Bland.ai."""
+    if not bland_handler.is_configured:
+        raise HTTPException(status_code=503, detail="Bland.ai calling service is not configured")
+    res = bland_handler.get_agent_details(agent_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=res.get("code", 502), detail=res.get("message"))
     return res
 
 
@@ -436,6 +658,26 @@ def get_call_info(call_id: str):
     if res.get("status") == "error":
         raise HTTPException(status_code=res.get("code", 502), detail=res.get("message"))
     return res
+
+
+@app.get("/api/call/recording/{call_id}")
+def get_call_recording_file(call_id: str):
+    """Serve call audio recording directly without requiring Bland API key in browser."""
+    recordings_dir = Path(__file__).resolve().parent / "media" / "recordings"
+    for ext in (".mp3", ".wav"):
+        candidate = recordings_dir / f"{call_id}{ext}"
+        if candidate.exists() and candidate.stat().st_size > 1000:
+            media_type = "audio/mpeg" if ext == ".mp3" else "audio/wav"
+            return FileResponse(candidate, media_type=media_type, filename=f"call_{call_id[:8]}{ext}")
+        named_candidate = recordings_dir / f"call_{call_id[:8]}_recording{ext}"
+        if named_candidate.exists() and named_candidate.stat().st_size > 1000:
+            media_type = "audio/mpeg" if ext == ".mp3" else "audio/wav"
+            return FileResponse(named_candidate, media_type=media_type, filename=f"call_{call_id[:8]}{ext}")
+
+    cached_path = bland_handler.download_recording(call_id, dest_dir=recordings_dir)
+    if cached_path and cached_path.exists():
+        return FileResponse(cached_path, media_type="audio/wav", filename=f"call_{call_id[:8]}.wav")
+    raise HTTPException(status_code=404, detail="Recording not available or still processing")
 
 
 @app.get("/api/bland/account")
@@ -643,4 +885,106 @@ def save_preferences_endpoint(user_id: str, body: dict):
     """Update user timezone, quiet hours, and follow-up preferences."""
     prefs = reminder_service.save_user_preferences(user_id, body)
     return prefs
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp Campaign Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/campaign/workflow")
+def get_campaign_workflow_endpoint():
+    """Retrieve full campaign state including validated recipients, proposed message, and logs."""
+    try:
+        return campaign_manager.get_workflow_state()
+    except Exception as e:
+        logger.error("Error fetching campaign workflow: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/campaign/template")
+def update_campaign_template_endpoint(body: dict):
+    """Update message template and tone settings."""
+    try:
+        template = body.get("template", "")
+        tone = body.get("tone")
+        return campaign_manager.update_template(template=template, tone=tone)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/campaign/test-recipient")
+def set_test_recipient_endpoint(body: dict):
+    """Configure designated test recipient phone number."""
+    phone = body.get("phone_number")
+    if not phone:
+        raise HTTPException(status_code=400, detail="'phone_number' is required")
+    try:
+        rec = campaign_manager.set_test_recipient(phone)
+        return {"status": "configured", "recipient": rec.model_dump()}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/campaign/send-test")
+def send_test_message_endpoint(body: Optional[dict] = None):
+    """
+    Send single test message ONLY to the explicitly approved test recipient.
+    Does not contact remaining team members.
+    """
+    test_number = (body or {}).get("test_number")
+    try:
+        result = campaign_manager.send_test_message(test_number=test_number)
+        return result.model_dump()
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/campaign/approve-test")
+def approve_test_endpoint():
+    """Manually approve the test result so rollout can proceed."""
+    try:
+        return campaign_manager.approve_test()
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/campaign/rollout")
+def execute_rollout_endpoint(body: dict):
+    """
+    Execute controlled rollout to remaining team members.
+    Requires prior test approval and explicit confirmation.
+    """
+    confirm = body.get("confirm", False)
+    delay_seconds = float(body.get("delay_seconds", 1.5))
+    try:
+        return campaign_manager.execute_rollout(confirm=confirm, delay_seconds=delay_seconds)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/campaign/reset")
+def reset_campaign_endpoint():
+    """Reset campaign state and logs to allow fresh testing."""
+    try:
+        return campaign_manager.reset_campaign()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/campaign/gateway-status")
+def get_gateway_status_endpoint():
+    """Check connectivity and authorization status of the WhatsApp gateway."""
+    try:
+        return campaign_manager.gateway.check_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 

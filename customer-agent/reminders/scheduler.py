@@ -35,6 +35,7 @@ class PersistentReminderScheduler:
         poll_interval_seconds: float = 10.0,
         orbit_api_url: Optional[str] = None,
         orbit_token: Optional[str] = None,
+        dispatch_sender: Optional[Any] = None,
     ):
         if db_module:
             self.db = db_module
@@ -45,6 +46,7 @@ class PersistentReminderScheduler:
         self.poll_interval = poll_interval_seconds
         self.orbit_url = (orbit_api_url or os.environ.get("ORBIT_API_URL", "http://localhost:8098")).rstrip("/")
         self.orbit_token = orbit_token or os.environ.get("ORBIT_INSTANCE_TOKEN", "cc12f98a-6ed1-4722-9554-b2b7e5d05d3a")
+        self.dispatch_sender = dispatch_sender
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -228,6 +230,15 @@ class PersistentReminderScheduler:
 
     def _dispatch_message(self, channel: str, recipient: str, text: str) -> (bool, Optional[str]):
         """Deliver message to channel with timeout and error handling."""
+        if self.dispatch_sender:
+            try:
+                res = self.dispatch_sender(channel, recipient, text)
+                if isinstance(res, tuple):
+                    return res
+                return (True, None) if res else (False, "Custom sender failed")
+            except Exception as e:
+                return False, str(e)
+
         if channel == "whatsapp":
             clean_number = "".join(c for c in recipient if c.isdigit())
             url = f"{self.orbit_url}/message/send-text"

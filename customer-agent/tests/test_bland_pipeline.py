@@ -37,7 +37,7 @@ class TestBlandPipeline(unittest.TestCase):
         self.assertIn("Invalid phone number", res2.get("message", ""))
 
     def test_bland_send_call_empty_task(self):
-        handler = BlandHandler(api_key="test-key")
+        handler = BlandHandler(api_key="test-key", default_agent_id="")
         res = handler.send_call(phone_number="+971525919933", task="")
         self.assertEqual(res.get("status"), "error")
         self.assertIn("cannot be empty", res.get("message", ""))
@@ -121,6 +121,54 @@ class TestBlandPipeline(unittest.TestCase):
         self.assertEqual(res.get("status"), "error")
         self.assertEqual(res.get("code"), 400)
         self.assertIn("Country not supported", res.get("message", ""))
+
+    @patch("httpx.Client")
+    def test_bland_send_call_with_agent_id_and_version(self, mock_client_cls):
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "success",
+            "call_id": "call_agent_123",
+            "message": "Call queued with agent",
+        }
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        handler = BlandHandler(
+            api_key="test-key",
+            default_agent_id="537c56c1-2334-46d4-8901-c268c84f5a57",
+            default_agent_version="dev",
+        )
+        res = handler.send_call(
+            phone_number="+919745482646",
+        )
+
+        self.assertEqual(res.get("status"), "success")
+        self.assertEqual(res.get("call_id"), "call_agent_123")
+        mock_client.post.assert_called_once()
+        _, kwargs = mock_client.post.call_args
+        self.assertEqual(kwargs["json"]["phone_number"], "+919745482646")
+        self.assertEqual(kwargs["json"]["agent_id"], "537c56c1-2334-46d4-8901-c268c84f5a57")
+        self.assertEqual(kwargs["json"]["agent_version"], "dev")
+
+    @patch("httpx.Client")
+    def test_bland_get_agent_details(self, mock_client_cls):
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "agent_id": "537c56c1-2334-46d4-8901-c268c84f5a57",
+            "name": "Horus Voice Agent",
+            "voice": "maya",
+        }
+        mock_client.get.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        handler = BlandHandler(api_key="test-key")
+        res = handler.get_agent_details("537c56c1-2334-46d4-8901-c268c84f5a57")
+        self.assertEqual(res.get("status"), "success")
+        self.assertEqual(res.get("data", {}).get("agent_id"), "537c56c1-2334-46d4-8901-c268c84f5a57")
 
 
 if __name__ == "__main__":

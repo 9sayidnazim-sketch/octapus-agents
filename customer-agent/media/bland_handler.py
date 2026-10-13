@@ -36,6 +36,8 @@ class BlandHandler:
         api_key: Optional[str] = None,
         api_url: Optional[str] = None,
         default_voice: Optional[str] = None,
+        default_agent_id: Optional[str] = None,
+        default_agent_version: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
     ):
         if api_key is not None:
@@ -53,6 +55,23 @@ class BlandHandler:
             or os.environ.get("BLAND_DEFAULT_VOICE")
             or DEFAULT_BLAND_VOICE
         )
+        if default_agent_id is not None:
+            self.default_agent_id = default_agent_id
+        else:
+            self.default_agent_id = (
+                os.environ.get("BLAND_AGENT_ID")
+                or os.environ.get("BLAND_DEFAULT_AGENT_ID")
+                or ""
+            )
+
+        if default_agent_version is not None:
+            self.default_agent_version = default_agent_version
+        else:
+            self.default_agent_version = (
+                os.environ.get("BLAND_AGENT_VERSION")
+                or os.environ.get("BLAND_DEFAULT_AGENT_VERSION")
+                or ""
+            )
         self.timeout = timeout
 
     @property
@@ -79,7 +98,9 @@ class BlandHandler:
     def send_call(
         self,
         phone_number: str,
-        task: str,
+        task: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        agent_version: Optional[str] = None,
         first_sentence: Optional[str] = None,
         language: str = "en",
         voice: Optional[str] = None,
@@ -90,6 +111,7 @@ class BlandHandler:
     ) -> Dict[str, Any]:
         """
         Initiate an outbound conversational AI phone call via Bland.ai.
+        Supports both task prompt-driven calls and pre-configured agent_id / agent_version calls.
         """
         if not self.is_configured:
             return {"status": "error", "message": "Bland.ai API key is not configured"}
@@ -98,18 +120,28 @@ class BlandHandler:
         if not clean_phone or len(clean_phone) < 8:
             return {"status": "error", "message": f"Invalid phone number: {phone_number}"}
 
-        if not task or not task.strip():
-            return {"status": "error", "message": "Call task prompt cannot be empty"}
+        target_agent_id = agent_id or self.default_agent_id
+        target_agent_version = agent_version or self.default_agent_version
+
+        if not target_agent_id and (not task or not task.strip()):
+            return {"status": "error", "message": "Call task prompt or agent_id cannot be empty"}
 
         payload: Dict[str, Any] = {
             "phone_number": clean_phone,
-            "task": task.strip(),
             "language": language or "en",
             "voice": voice or self.default_voice,
             "wait_for_greeting": wait_for_greeting,
             "record": record,
             "max_duration": max_duration,
         }
+
+        if task and task.strip():
+            payload["task"] = task.strip()
+
+        if target_agent_id:
+            payload["agent_id"] = target_agent_id
+        if target_agent_version:
+            payload["agent_version"] = target_agent_version
 
         if first_sentence and first_sentence.strip():
             payload["first_sentence"] = first_sentence.strip()
@@ -123,7 +155,7 @@ class BlandHandler:
                 resp = client.post(url, json=payload, headers=self._headers())
                 if resp.status_code in (200, 201):
                     data = resp.json()
-                    logger.info("Bland.ai initiated call to %s (call_id: %s)", clean_phone, data.get("call_id"))
+                    logger.info("Bland.ai initiated call to %s (call_id: %s, agent_id: %s)", clean_phone, data.get("call_id"), target_agent_id or "default")
                     return {"status": "success", "call_id": data.get("call_id"), "data": data}
                 else:
                     logger.warning("Bland.ai call initiation failed HTTP %d: %s", resp.status_code, resp.text[:200])
@@ -134,6 +166,24 @@ class BlandHandler:
                     }
         except Exception as exc:
             logger.error("Bland.ai request exception for %s: %s", clean_phone, exc)
+            return {"status": "error", "message": str(exc)}
+
+    def get_agent_details(self, agent_id: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch details of a configured Bland.ai agent."""
+        if not self.is_configured:
+            return {"status": "error", "message": "Bland.ai API key is not configured"}
+        target_id = agent_id or self.default_agent_id
+        if not target_id:
+            return {"status": "error", "message": "agent_id is required"}
+        try:
+            url = f"{self.api_url}/agents/{target_id}"
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.get(url, headers=self._headers())
+                if resp.status_code == 200:
+                    return {"status": "success", "data": resp.json()}
+                return {"status": "error", "code": resp.status_code, "message": resp.text[:200]}
+        except Exception as exc:
+            logger.error("Error retrieving Bland.ai agent %s: %s", target_id, exc)
             return {"status": "error", "message": str(exc)}
 
     def get_call_details(self, call_id: str) -> Dict[str, Any]:
@@ -155,6 +205,26 @@ class BlandHandler:
         except Exception as exc:
             logger.error("Error retrieving Bland.ai call %s: %s", call_id, exc)
             return {"status": "error", "message": str(exc)}
+    def download_recording(self, call_id: str, dest_dir: Optional[Path] = None) -> Optional[Path]:
+        """Fetch and cache call audio recording (.wav) using Bland API credentials."""
+        if not self.is_configured or not call_id:
+            return None
+        target_dir = dest_dir or (BASE_DIR / "media" / "recordings")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_file = target_dir / f"{call_id}.wav"
+        if target_file.exists() and target_file.stat().st_size > 1000:
+            return target_file
+        try:
+            url = f"{self.api_url}/recordings/{call_id}"
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.get(url, headers=self._headers(), follow_redirects=True)
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    target_file.write_bytes(resp.content)
+                    return target_file
+                logger.warning("Bland.ai recording fetch failed HTTP %d for %s", resp.status_code, call_id)
+        except Exception as exc:
+            logger.error("Error downloading Bland.ai recording %s: %s", call_id, exc)
+        return None
 
     def list_calls(self, limit: int = 20) -> List[Dict[str, Any]]:
         """List recent calls made through this Bland.ai account."""

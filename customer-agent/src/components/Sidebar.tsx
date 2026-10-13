@@ -9,6 +9,7 @@ import {
   Info,
   Moon,
   Sun,
+  Radio,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +18,7 @@ interface SidebarProps {
   onToggle: () => void;
   onNewChat: () => void;
   onOpenAbout: () => void;
+  onOpenCampaign?: () => void;
   recentTopics: string[];
   theme: "dark" | "light";
   onToggleTheme: () => void;
@@ -27,6 +29,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggle,
   onNewChat,
   onOpenAbout,
+  onOpenCampaign,
   recentTopics,
   theme,
   onToggleTheme,
@@ -70,6 +73,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             aria-label="History"
           >
             <Clock className="w-5 h-5" />
+          </button>
+
+          {/* Horus WhatsApp Team Rollout / Campaign Icon */}
+          <button
+            type="button"
+            onClick={onOpenCampaign}
+            className="p-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-colors cursor-pointer mt-1 relative"
+            title="Horus AI — WhatsApp Team Rollout"
+            aria-label="WhatsApp Campaign"
+          >
+            <Radio className="w-5 h-5" />
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
           </button>
         </div>
 
@@ -164,6 +179,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Footer info & controls */}
         <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-1">
+          <button
+            type="button"
+            onClick={onOpenCampaign}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer font-medium"
+          >
+            <Radio className="w-4 h-4" />
+            <span>WhatsApp Team Rollout</span>
+          </button>
+
           <button
             type="button"
             onClick={onOpenAbout}

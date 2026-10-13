@@ -93,6 +93,75 @@ class TestTTSPipeline(unittest.TestCase):
         self.assertIsNone(res)
         self.assertIsNone(handler.synthesize_data_url("Hello"))
 
+    def test_malayalam_detection(self):
+        from media.tts_handler import is_malayalam_or_manglish
+        self.assertTrue(is_malayalam_or_manglish("നമസ്കാരം, സുഖമാണോ?"))
+        self.assertTrue(is_malayalam_or_manglish("Njan Horus AI aanu. Entha vishesham?"))
+        self.assertTrue(is_malayalam_or_manglish("Sheri, nale ravile remind cheyyam."))
+        self.assertFalse(is_malayalam_or_manglish("Good morning, how are you today?"))
+
+    @patch("httpx.Client")
+    def test_sarvam_malayalam_synthesis_success(self, mock_client_cls):
+        import base64
+        fake_wav = b"RIFFfake-wav-audio-content"
+        fake_b64 = base64.b64encode(fake_wav).decode("ascii")
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"audios": [fake_b64]}
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        handler = TTSHandler(
+            elevenlabs_api_key="eleven-key",
+            sarvam_api_key="sk_5eq58rm8_IihroaTx4qkEM2bdLpL2khJS",
+        )
+        res = handler.synthesize_speech("നമസ്കാരം, സുഖമാണോ?")
+        self.assertIsNotNone(res)
+        audio_bytes, mimetype = res
+        self.assertEqual(audio_bytes, fake_wav)
+        self.assertEqual(mimetype, "audio/wav")
+
+        # Verify Sarvam endpoint was called with ml-IN and kavitha
+        mock_client.post.assert_called_once()
+        call_args = mock_client.post.call_args
+        self.assertIn("sarvam.ai", call_args[0][0])
+        payload = call_args[1]["json"]
+        self.assertEqual(payload["target_language_code"], "ml-IN")
+        self.assertEqual(payload["speaker"], "kavitha")
+
+    @patch("httpx.Client")
+    def test_sarvam_fallback_to_elevenlabs_on_error(self, mock_client_cls):
+        mock_client = MagicMock()
+        # First call (Sarvam) fails with 500
+        mock_resp_sarvam = MagicMock()
+        mock_resp_sarvam.status_code = 500
+        mock_resp_sarvam.text = "Internal Server Error"
+
+        # Second call (ElevenLabs fallback) succeeds
+        mock_resp_eleven = MagicMock()
+        mock_resp_eleven.status_code = 200
+        mock_resp_eleven.content = b"eleven-audio-fallback"
+
+        mock_client.post.side_effect = [
+            mock_resp_sarvam,
+            mock_resp_sarvam,  # retry 2
+            mock_resp_eleven,  # elevenlabs
+        ]
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        handler = TTSHandler(
+            elevenlabs_api_key="eleven-key",
+            sarvam_api_key="sarvam-key",
+        )
+        res = handler.synthesize_speech("നമസ്കാരം")
+        self.assertIsNotNone(res)
+        audio_bytes, mimetype = res
+        self.assertEqual(audio_bytes, b"eleven-audio-fallback")
+        self.assertEqual(mimetype, "audio/mpeg")
+
 
 if __name__ == "__main__":
     unittest.main()
+

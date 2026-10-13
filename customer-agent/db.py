@@ -67,6 +67,8 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 session_id TEXT NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
+                audio_url TEXT,
+                audio_status TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
@@ -123,6 +125,46 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'general',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(user_id, key)
+            );
+
+            CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                message_template TEXT NOT NULL,
+                tone TEXT NOT NULL DEFAULT 'warm_professional',
+                test_mode INTEGER NOT NULL DEFAULT 1,
+                test_recipient TEXT,
+                test_approved INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS whatsapp_campaign_logs (
+                id TEXT PRIMARY KEY,
+                campaign_id TEXT NOT NULL,
+                phone_number TEXT NOT NULL,
+                clean_number TEXT NOT NULL,
+                country TEXT NOT NULL,
+                is_test INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                error_details TEXT,
+                delivered_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (campaign_id) REFERENCES whatsapp_campaigns(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at ASC);
             CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
@@ -130,7 +172,15 @@ def init_db(db_path: Optional[Path] = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders_metadata(status, scheduled_at_utc);
             CREATE INDEX IF NOT EXISTS idx_reminders_user ON reminders_metadata(user_id, status);
             CREATE INDEX IF NOT EXISTS idx_reminders_recipient ON reminders_metadata(recipient);
+            CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, category);
+            CREATE INDEX IF NOT EXISTS idx_campaign_logs ON whatsapp_campaign_logs(campaign_id, clean_number);
         """)
+        # Safe migration for existing SQLite databases
+        for col in ["audio_url", "audio_status"]:
+            try:
+                conn.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT")
+            except Exception:
+                pass
     conn.close()
 
 
@@ -141,6 +191,8 @@ def save_message(
     channel: str = "web",
     customer_phone: Optional[str] = None,
     customer_name: Optional[str] = None,
+    audio_url: Optional[str] = None,
+    audio_status: Optional[str] = None,
     db_path: Optional[Path] = None,
 ) -> str:
     """Insert a message and update or create its session record."""
@@ -178,16 +230,34 @@ def save_message(
                 (session_id, channel, customer_phone, customer_name, now, now),
             )
 
-        # Insert message
+        # Insert message with audio tracking
         conn.execute(
             """
-            INSERT INTO messages (id, session_id, role, content, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO messages (id, session_id, role, content, audio_url, audio_status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (mid, session_id, role, content, now),
+            (mid, session_id, role, content, audio_url, audio_status, now),
         )
     conn.close()
     return mid
+
+
+def get_session_messages_full(session_id: str, limit: int = 50, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Retrieve full message records with audio_url and audio_status."""
+    conn = get_connection(db_path)
+    cur = conn.execute(
+        """
+        SELECT id, session_id, role, content, audio_url, audio_status, created_at
+        FROM messages
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+        LIMIT ?
+        """,
+        (session_id, limit),
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
 
 def get_history(session_id: str, limit: int = 20, db_path: Optional[Path] = None) -> List[Dict[str, str]]:
@@ -524,3 +594,256 @@ def save_user_preferences(prefs: Dict[str, Any], db_path: Optional[Path] = None)
         )
     conn.close()
     return get_user_preferences(u_id, db_path=db_path)
+
+
+# ==============================================================================
+# PERSISTENT MEMORY HELPERS
+# ==============================================================================
+
+def save_memory(
+    user_id: str,
+    key: str,
+    value: str,
+    category: str = "general",
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Save or update persistent user memory/preference."""
+    conn = get_connection(db_path)
+    now = now_iso()
+    mem_id = str(uuid.uuid4())
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO memories (id, user_id, key, value, category, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, key) DO UPDATE SET
+                value = excluded.value,
+                category = excluded.category,
+                updated_at = excluded.updated_at
+            """,
+            (mem_id, user_id, key.strip().lower(), value.strip(), category.strip().lower(), now, now),
+        )
+    conn.close()
+    return get_memory(user_id, key, db_path=db_path) or {}
+
+
+def get_memory(
+    user_id: str,
+    key: str,
+    db_path: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """Retrieve memory by exact user_id and key."""
+    conn = get_connection(db_path)
+    cur = conn.execute(
+        "SELECT * FROM memories WHERE user_id = ? AND key = ?",
+        (user_id, key.strip().lower()),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_memories(
+    user_id: str,
+    category: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    """List persistent memories for a user, optionally filtered by category."""
+    conn = get_connection(db_path)
+    query = "SELECT * FROM memories WHERE user_id = ?"
+    params: List[Any] = [user_id]
+    if category:
+        query += " AND category = ?"
+        params.append(category.strip().lower())
+    query += " ORDER BY updated_at DESC"
+    cur = conn.execute(query, params)
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def delete_memory(
+    user_id: str,
+    key: str,
+    db_path: Optional[Path] = None,
+) -> bool:
+    """Delete a memory item."""
+    conn = get_connection(db_path)
+    with conn:
+        cur = conn.execute(
+            "DELETE FROM memories WHERE user_id = ? AND key = ?",
+            (user_id, key.strip().lower()),
+        )
+        deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp Campaign Management
+# ---------------------------------------------------------------------------
+
+def get_or_create_campaign(
+    campaign_id: str,
+    name: str,
+    template: str,
+    tone: str = "warm_professional",
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Retrieve an existing campaign or initialize a new one in draft test mode."""
+    conn = get_connection(db_path)
+    now = now_iso()
+    with conn:
+        cur = conn.execute("SELECT * FROM whatsapp_campaigns WHERE id = ?", (campaign_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.execute(
+                """
+                INSERT INTO whatsapp_campaigns (
+                    id, name, message_template, tone, test_mode, test_recipient,
+                    test_approved, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 1, NULL, 0, 'draft', ?, ?)
+                """,
+                (campaign_id, name, template, tone, now, now),
+            )
+            cur = conn.execute("SELECT * FROM whatsapp_campaigns WHERE id = ?", (campaign_id,))
+            row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else {}
+
+
+def get_campaign(
+    campaign_id: str,
+    db_path: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """Retrieve campaign record by ID."""
+    conn = get_connection(db_path)
+    cur = conn.execute("SELECT * FROM whatsapp_campaigns WHERE id = ?", (campaign_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_campaign(
+    campaign_id: str,
+    updates: Dict[str, Any],
+    db_path: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """Update campaign properties (e.g. message_template, tone, test_recipient, test_approved)."""
+    allowed_fields = {
+        "name", "message_template", "tone", "test_mode",
+        "test_recipient", "test_approved", "status"
+    }
+    filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+    if not filtered_updates:
+        return get_campaign(campaign_id, db_path=db_path)
+
+    conn = get_connection(db_path)
+    now = now_iso()
+    filtered_updates["updated_at"] = now
+    set_clause = ", ".join(f"{k} = ?" for k in filtered_updates.keys())
+    values = list(filtered_updates.values()) + [campaign_id]
+
+    with conn:
+        conn.execute(
+            f"UPDATE whatsapp_campaigns SET {set_clause} WHERE id = ?",
+            values,
+        )
+    conn.close()
+    return get_campaign(campaign_id, db_path=db_path)
+
+
+def save_campaign_log(
+    campaign_id: str,
+    phone_number: str,
+    clean_number: str,
+    country: str,
+    is_test: int = 0,
+    status: str = "pending",
+    attempts: int = 0,
+    error_details: Optional[str] = None,
+    delivered_at: Optional[str] = None,
+    log_id: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Upsert a campaign delivery log entry."""
+    conn = get_connection(db_path)
+    now = now_iso()
+    lid = log_id or str(uuid.uuid4())
+
+    with conn:
+        cur = conn.execute(
+            """
+            SELECT id FROM whatsapp_campaign_logs 
+            WHERE campaign_id = ? AND clean_number = ? AND is_test = ?
+            """,
+            (campaign_id, clean_number, is_test),
+        )
+        existing = cur.fetchone()
+        if existing:
+            lid = existing["id"]
+            conn.execute(
+                """
+                UPDATE whatsapp_campaign_logs
+                SET status = ?, attempts = ?, error_details = ?,
+                    delivered_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, attempts, error_details, delivered_at, now, lid),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO whatsapp_campaign_logs (
+                    id, campaign_id, phone_number, clean_number, country,
+                    is_test, status, attempts, error_details, delivered_at,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    lid, campaign_id, phone_number, clean_number, country,
+                    is_test, status, attempts, error_details, delivered_at,
+                    now, now,
+                ),
+            )
+
+        cur = conn.execute("SELECT * FROM whatsapp_campaign_logs WHERE id = ?", (lid,))
+        row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else {}
+
+
+def get_campaign_logs(
+    campaign_id: str,
+    is_test: Optional[int] = None,
+    db_path: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    """Retrieve delivery logs for a campaign."""
+    conn = get_connection(db_path)
+    query = "SELECT * FROM whatsapp_campaign_logs WHERE campaign_id = ?"
+    params: List[Any] = [campaign_id]
+    if is_test is not None:
+        query += " AND is_test = ?"
+        params.append(is_test)
+    query += " ORDER BY created_at ASC"
+    cur = conn.execute(query, params)
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def reset_campaign_logs(
+    campaign_id: str,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Clear delivery logs for a campaign to allow a fresh run."""
+    conn = get_connection(db_path)
+    with conn:
+        cur = conn.execute(
+            "DELETE FROM whatsapp_campaign_logs WHERE campaign_id = ?",
+            (campaign_id,),
+        )
+        deleted = cur.rowcount
+    conn.close()
+    return deleted
+

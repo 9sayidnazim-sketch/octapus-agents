@@ -49,9 +49,31 @@ class ImageHandler:
         if not image_bytes:
             raise ValueError("Image data is empty.")
 
-        clean_mime = mimetype.split(";")[0].strip().lower()
-        if clean_mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
-            clean_mime = "image/jpeg"
+        # Check maximum raw size limit (10MB)
+        if len(image_bytes) > 10 * 1024 * 1024:
+            raise ValueError("Image file size exceeds maximum limit of 10MB.")
+
+        # Validate with PIL if available
+        detected_mime = mimetype.split(";")[0].strip().lower()
+        try:
+            import io
+            from PIL import Image
+
+            with Image.open(io.BytesIO(image_bytes)) as img:
+                img.verify()
+                format_to_mime = {
+                    "JPEG": "image/jpeg",
+                    "PNG": "image/png",
+                    "WEBP": "image/webp",
+                    "GIF": "image/gif",
+                }
+                if img.format in format_to_mime:
+                    detected_mime = format_to_mime[img.format]
+        except Exception as exc:
+            logger.debug("PIL inspection warning: %s", exc)
+
+        if detected_mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+            detected_mime = "image/jpeg"
 
         b64_data = base64.b64encode(image_bytes).decode("utf-8")
         user_prompt = caption.strip() if caption.strip() else DEFAULT_IMAGE_PROMPT
@@ -59,14 +81,14 @@ class ImageHandler:
         # 1. If an external Vision API is configured, query it for a textual analysis
         external_analysis: Optional[str] = None
         if self.vision_url and self.vision_key:
-            external_analysis = self._call_external_vision(b64_data, clean_mime, user_prompt)
+            external_analysis = self._call_external_vision(b64_data, detected_mime, user_prompt)
 
         # 2. Build standard Anthropic content blocks for native multimodal processing
         image_block = {
             "type": "image",
             "source": {
                 "type": "base64",
-                "media_type": clean_mime,
+                "media_type": detected_mime,
                 "data": b64_data,
             },
         }
@@ -83,7 +105,7 @@ class ImageHandler:
         return {
             "content_blocks": [image_block, text_block],
             "b64_data": b64_data,
-            "mimetype": clean_mime,
+            "mimetype": detected_mime,
             "caption": prompt_text,
             "external_analysis": external_analysis,
         }

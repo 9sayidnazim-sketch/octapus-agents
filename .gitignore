@@ -12,4 +12,7 @@ __pycache__/
 .pytest_cache/
 node_modules/
 .vercel/
-
+*.wav
+*.mp3
+customer-agent/media/recordings/
+customer-agent/static/generated_docs/

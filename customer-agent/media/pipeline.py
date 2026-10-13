@@ -168,13 +168,21 @@ class MediaPipeline:
 
         except Exception as exc:
             logger.error("❌ Media processing error for %s (%s): %s", clean_number, msg_type, exc)
+            err_str = str(exc)
+            if msg_type == "audio" and "STT" in err_str:
+                user_msg = "Voice note transcription is currently not configured (missing STT_API_KEY). Please send your request as text."
+            elif msg_type == "image" and ("corrupted" in err_str or "unreadable" in err_str or "10MB" in err_str):
+                user_msg = f"I couldn't open that image ({err_str}). Please send a clear JPG or PNG image under 10MB."
+            else:
+                user_msg = FALLBACK_ERROR_MESSAGE
+
             return {
                 "status": "fallback",
                 "type": msg_type,
-                "message": FALLBACK_ERROR_MESSAGE,
+                "message": user_msg,
                 "content_blocks": None,
                 "clean_number": clean_number,
-                "error": str(exc),
+                "error": err_str,
                 "sanitized_payload": sanitized,
             }
         finally:

@@ -229,6 +229,7 @@ app.post("/incoming", async (req, res) => {
 
       let reply = "";
       let audioUrl = null;
+      let webhookProcessed = false;
 
       // Call Horus Customer Agent's multimodal webhook endpoint
       try {
@@ -247,6 +248,7 @@ app.post("/incoming", async (req, res) => {
           }
           reply = resData.reply;
           audioUrl = resData.audio_url || null;
+          webhookProcessed = true;
         } else {
           console.warn(`⚠️ [Agent Webhook HTTP ${agentRes.status}]`);
         }
@@ -263,10 +265,10 @@ app.post("/incoming", async (req, res) => {
         }
       }
 
-      // Synthesize voice reply if user sent voice or requested audio note and webhook didn't supply audio_url
-      if (reply && !audioUrl) {
+      // Only attempt fallback voice synthesis if webhook was unreachable and didn't process the turn
+      if (reply && !audioUrl && !webhookProcessed) {
         const textLower = (text || "").toLowerCase();
-        const wantsAudio = isAudio || ["voice", "audio", "sudio", "ശബ്ദം", "സംസാരിക്കുക", "speak", "voice note", "audio note", "parayu", "para"].some(kw => textLower.includes(kw));
+        const wantsAudio = isAudio || ["voice aayi", "audio ayakk", "voice note", "audio note", "reply in voice", "reply in audio", "read aloud", "speak aloud"].some(kw => textLower.includes(kw));
         if (wantsAudio) {
           try {
             const ttsRes = await fetch(`${AGENT_URL.replace("/chat", "")}/api/tts`, {

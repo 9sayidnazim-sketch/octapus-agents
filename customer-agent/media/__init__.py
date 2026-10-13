@@ -16,7 +16,7 @@ from .image_handler import ImageHandler
 from .bland_handler import BlandHandler
 from .email_handler import EmailHandler
 from .pipeline import FALLBACK_ERROR_MESSAGE, MediaPipeline
-from .tts_handler import TTSHandler
+from .tts_handler import TTSHandler, clean_for_speech, detect_voice_intent
 
 __all__ = [
     "detect_message_type",
@@ -27,6 +27,8 @@ __all__ = [
     "DocumentHandler",
     "MediaPipeline",
     "TTSHandler",
+    "clean_for_speech",
+    "detect_voice_intent",
     "BlandHandler",
     "EmailHandler",
     "FALLBACK_ERROR_MESSAGE",
