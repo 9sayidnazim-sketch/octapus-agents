@@ -211,8 +211,10 @@ app.post("/incoming", async (req, res) => {
 
     // Log the raw incoming payload safely (secrets removed)
     const sanitizedLog = sanitizePayloadForLog(body);
+    const isManagement = ["971525919933", "971508621612"].includes(cleanNumber);
+    const tag = isManagement ? `👑 [MANAGEMENT: ${cleanNumber}]` : `📩 [WhatsApp Ingest] [${cleanNumber}]`;
     console.log(
-      `📩 [WhatsApp Ingest] [${cleanNumber}] Type: ${detectedType} | Payload: ${JSON.stringify(sanitizedLog).slice(0, 320)}...`
+      `${tag} Type: ${detectedType} | Payload: ${JSON.stringify(sanitizedLog).slice(0, 320)}...`
     );
 
     if (!text && !hasMedia) {

@@ -58,3 +58,9 @@ Record every lead's source (Facebook, Instagram, Web, Referral, WhatsApp, Google
 - Octopus Hub: client-flow platform and requirement forms
 - Claims Hub: project completion tracking
 - WhatsApp: company number connected through Kapso (re-verify webhook and template approval status)
+
+## Authorized Management Phone Numbers
+- Primary Account Owner / Management: +971525919933
+- Authorized Executive Management: +971508621612
+Always remember, recognize, and prioritize these numbers as authorized Octapus management contacts.
+
