@@ -261,6 +261,28 @@ app.post("/incoming", async (req, res) => {
         }
       }
 
+      // Synthesize voice reply if user sent voice or requested audio note and webhook didn't supply audio_url
+      if (reply && !audioUrl) {
+        const textLower = (text || "").toLowerCase();
+        const wantsAudio = isAudio || ["voice", "audio", "sudio", "ശബ്ദം", "സംസാരിക്കുക", "speak", "voice note", "audio note", "parayu", "para"].some(kw => textLower.includes(kw));
+        if (wantsAudio) {
+          try {
+            const ttsRes = await fetch(`${AGENT_URL.replace("/chat", "")}/api/tts`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: reply }),
+              signal: AbortSignal.timeout(8000),
+            });
+            if (ttsRes.ok) {
+              const ttsData = await ttsRes.json();
+              audioUrl = ttsData.audio_url;
+            }
+          } catch (e) {
+            // non-fatal
+          }
+        }
+      }
+
       if (reply) {
         console.log(`🤖 [Horus Reply] To: ${cleanNumber} | "${reply.slice(0, 100).replace(/\n/g, " ")}..."`);
         await sendGatewayReply(cleanNumber, reply, incomingToken);
