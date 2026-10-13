@@ -51,6 +51,28 @@ from providers.base import ModelInfo, ProviderResponse, ToolCall
 from providers.custom_adapter import validate_base_url
 from tools import TOOLS, dispatch_tool, is_affirmative, is_negative
 from usage_tracker import check_budget_status, track_and_record_usage
+from prompt_builder import build_dynamic_prompt
+from messaging import sendMessage, normalize_phone_number
+from skills.registry import get_skill, list_skills
+from db import (
+    list_training_instructions,
+    get_training_instruction,
+    create_training_instruction,
+    update_training_instruction,
+    delete_training_instruction,
+    add_training_knowledge,
+    list_training_knowledge,
+    get_training_knowledge,
+    delete_training_knowledge,
+    delete_training_knowledge_by_source,
+    list_training_skills,
+    get_training_skill,
+    update_training_skill,
+    list_training_logs,
+    restore_training_log,
+    add_training_correction,
+    list_training_corrections,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -988,3 +1010,551 @@ def chat_endpoint(
         cost=cost,
         budget_warning=budget_warning,
     )
+
+
+# ============================================================================
+# Agent Training Center Endpoints (Admin Only)
+# ============================================================================
+
+import base64
+import io
+import re
+import xml.etree.ElementTree as ET
+import zipfile
+
+
+def extract_text_from_file_content(filename: str, content_bytes: bytes) -> str:
+    """Extract readable text from PDF, DOCX, or TXT without third-party binary dependencies."""
+    lower = filename.lower()
+    if lower.endswith(".txt") or lower.endswith(".md"):
+        return content_bytes.decode("utf-8", errors="ignore")
+
+    if lower.endswith(".docx"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(content_bytes)) as z:
+                xml_content = z.read("word/document.xml")
+                root = ET.fromstring(xml_content)
+                texts = []
+                for node in root.iter():
+                    if node.tag.endswith("}t") and node.text:
+                        texts.append(node.text)
+                return " ".join(texts).strip()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse DOCX file: {e}")
+
+    if lower.endswith(".pdf"):
+        try:
+            raw = content_bytes.decode("latin-1", errors="ignore")
+            streams = re.findall(r"stream[\r\n]+(.*?)[\r\n]+endstream", raw, re.DOTALL)
+            extracted_words = []
+            for stream in streams:
+                matches = re.findall(r"\(([^\)]+)\)\s*(?:Tj|'|\")", stream)
+                if matches:
+                    extracted_words.extend(matches)
+                array_matches = re.findall(r"\[(.*?)\]\s*TJ", stream)
+                for arr in array_matches:
+                    words = re.findall(r"\(([^\)]+)\)", arr)
+                    extracted_words.extend(words)
+
+            if extracted_words:
+                return " ".join(extracted_words).strip()
+
+            clean_strings = re.findall(r"[A-Za-z0-9\s\.,;:!?'\"-]{4,}", raw)
+            text_result = " ".join(clean_strings).strip()
+            if text_result:
+                return text_result[:25000]
+            return "PDF uploaded (text stream extracted)."
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to extract text from PDF: {e}")
+
+    return content_bytes.decode("utf-8", errors="ignore")
+
+
+class InstructionIn(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1)
+    priority: Optional[int] = 1
+    active: Optional[int] = 1
+
+
+class KnowledgeIn(BaseModel):
+    title: str = Field(..., min_length=1, max_length=250)
+    content: str = Field(..., min_length=1)
+    tags: Optional[str] = ""
+    source: Optional[str] = "pasted"
+
+
+class KnowledgeUploadIn(BaseModel):
+    filename: str
+    content_base64: str
+    title: Optional[str] = None
+    tags: Optional[str] = ""
+
+
+class SkillUpdateIn(BaseModel):
+    enabled: int
+    extra_instructions: Optional[str] = ""
+    tone: Optional[str] = "Professional"
+    language: Optional[str] = "auto"
+    templates: Optional[str] = ""
+
+
+class TestChatIn(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    conversation_id: Optional[str] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+
+
+class CorrectionIn(BaseModel):
+    query: str = Field(..., min_length=1)
+    bot_reply: str = Field(..., min_length=1)
+    correction: str = Field(..., min_length=1)
+    rating: Optional[str] = ""
+    create_instruction: Optional[bool] = False
+
+
+class SendMessageIn(BaseModel):
+    number: str
+    text: str
+
+
+# --- 1. Instructions API ---
+
+@app.get("/training/instructions")
+def get_instructions_endpoint(
+    active_only: bool = False,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    return {"instructions": list_training_instructions(active_only=active_only)}
+
+
+@app.post("/training/instructions")
+def create_instruction_endpoint(
+    body: InstructionIn,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    created = create_training_instruction(
+        title=body.title,
+        content=body.content,
+        priority=body.priority or 1,
+        active=body.active if body.active is not None else 1,
+        user="admin"
+    )
+    return {"status": "ok", "instruction": created}
+
+
+@app.put("/training/instructions/{inst_id}")
+def update_instruction_endpoint(
+    inst_id: str,
+    body: InstructionIn,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    updated = update_training_instruction(
+        inst_id=inst_id,
+        title=body.title,
+        content=body.content,
+        priority=body.priority or 1,
+        active=body.active if body.active is not None else 1,
+        user="admin"
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Instruction not found.")
+    return {"status": "ok", "instruction": updated}
+
+
+@app.delete("/training/instructions/{inst_id}")
+def delete_instruction_endpoint(
+    inst_id: str,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    success = delete_training_instruction(inst_id=inst_id, user="admin")
+    if not success:
+        raise HTTPException(status_code=404, detail="Instruction not found.")
+    return {"status": "ok", "id": inst_id}
+
+
+# --- 2. Knowledge / Studies API ---
+
+@app.get("/training/knowledge")
+def get_knowledge_endpoint(
+    q: Optional[str] = None,
+    limit: int = 100,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    return {"knowledge": list_training_knowledge(query=q, limit=limit)}
+
+
+@app.post("/training/knowledge")
+def add_knowledge_endpoint(
+    body: KnowledgeIn,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    saved = add_training_knowledge(
+        title=body.title,
+        text=body.content,
+        tags=body.tags or "",
+        source=body.source or "pasted",
+        user="admin"
+    )
+    return {"status": "ok", "chunks": saved, "count": len(saved)}
+
+
+@app.post("/training/knowledge/upload")
+def upload_knowledge_endpoint(
+    body: KnowledgeUploadIn,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    try:
+        content_bytes = base64.b64decode(body.content_base64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 payload: {e}")
+
+    extracted_text = extract_text_from_file_content(body.filename, content_bytes)
+    if not extracted_text.strip():
+        raise HTTPException(status_code=400, detail="No readable text could be extracted from the file.")
+
+    title = body.title or body.filename
+    source = f"upload:{body.filename}"
+    saved = add_training_knowledge(
+        title=title,
+        text=extracted_text,
+        tags=body.tags or "uploaded",
+        source=source,
+        user="admin"
+    )
+    return {
+        "status": "ok",
+        "filename": body.filename,
+        "title": title,
+        "source": source,
+        "chunks_created": len(saved),
+        "chunks": saved
+    }
+
+
+@app.delete("/training/knowledge/{know_id}")
+def delete_knowledge_endpoint(
+    know_id: str,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    success = delete_training_knowledge(know_id=know_id, user="admin")
+    if not success:
+        raise HTTPException(status_code=404, detail="Knowledge chunk not found.")
+    return {"status": "ok", "id": know_id}
+
+
+@app.delete("/training/knowledge/source/{source:path}")
+def delete_knowledge_source_endpoint(
+    source: str,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    deleted_count = delete_training_knowledge_by_source(source=source, user="admin")
+    return {"status": "ok", "source": source, "deleted_chunks": deleted_count}
+
+
+# --- 3. Skills API ---
+
+@app.get("/training/skills")
+def get_skills_endpoint(x_staff_password: Optional[str] = Header(default=None)):
+    check_password(x_staff_password)
+    return {"skills": list_training_skills()}
+
+
+@app.put("/training/skills/{skill_id}")
+def update_skill_endpoint(
+    skill_id: str,
+    body: SkillUpdateIn,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    updated = update_training_skill(
+        skill_id=skill_id,
+        enabled=body.enabled,
+        extra_instructions=body.extra_instructions or "",
+        tone=body.tone or "Professional",
+        language=body.language or "auto",
+        templates=body.templates or "",
+        user="admin"
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Skill not found.")
+    return {"status": "ok", "skill": updated}
+
+
+# --- 4. Test Chat Sandbox API ---
+
+@app.post("/training/test-chat")
+def test_chat_endpoint(
+    body: TestChatIn,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    """
+    Sandbox chat for testing the agent prompt and behavior.
+    Under each reply shows which instructions and knowledge chunks were used.
+    """
+    check_password(x_staff_password)
+    message = body.message.strip()
+
+    # 1. Run Reply Understanding skill if registered and enabled
+    understanding_skill = get_skill("understanding")
+    understanding_meta = {}
+    if understanding_skill:
+        sk_config = get_training_skill("understanding") or {}
+        if sk_config.get("enabled", 1):
+            understanding_meta = understanding_skill.execute({"text": message}, sk_config)
+
+    # 2. Build dynamic prompt immediately from DB
+    system_prompt, meta = build_dynamic_prompt(message)
+    if understanding_meta:
+        system_prompt += f"\n\n### Message Understanding Analysis\n{understanding_meta.get('summary', '')}"
+
+    # 3. Resolve Provider & Model
+    model_settings = get_setting("models", {}) or {}
+    provider_name = body.provider or model_settings.get("default_provider", "anthropic")
+    model_name = body.model or (model_settings.get("default_model") or "").strip() or "claude-sonnet-5-5"
+
+    active_key = get_active_provider_key(provider_name)
+    raw_key = crypto.decrypt_key(active_key["encrypted_key"]) if active_key else os.environ.get("ANTHROPIC_API_KEY", "")
+    base_url = active_key.get("base_url") if active_key else os.environ.get("ANTHROPIC_BASE_URL")
+
+    try:
+        adapter = get_adapter(provider_name)
+        messages_payload = [{"role": "user", "content": message}]
+        response = adapter.complete(
+            model=model_name,
+            messages=messages_payload,
+            system=system_prompt,
+            api_key=raw_key,
+            base_url=base_url
+        )
+        reply = response.content
+    except Exception as e:
+        reply = f"[Test Chat Simulation] Horus response: Thank you for your inquiry about Octapus services. (Provider note: {e})"
+
+    return {
+        "reply": reply,
+        "used_instructions": meta.get("used_instructions", []),
+        "used_knowledge_chunks": meta.get("used_knowledge_chunks", []),
+        "enabled_skills": meta.get("enabled_skills", []),
+        "understanding": understanding_meta,
+        "model": model_name,
+        "provider": provider_name,
+    }
+
+
+# --- 5. Corrections API ---
+
+@app.post("/training/corrections")
+def add_correction_endpoint(
+    body: CorrectionIn,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    """
+    Save test chat correction.
+    If create_instruction is True, automatically creates a new high-priority instruction.
+    """
+    check_password(x_staff_password)
+    result = add_training_correction(
+        query=body.query,
+        bot_reply=body.bot_reply,
+        correction=body.correction,
+        rating=body.rating or "",
+        create_instruction=bool(body.create_instruction),
+        user="admin"
+    )
+    return {"status": "ok", "correction": result}
+
+
+@app.get("/training/corrections")
+def list_corrections_endpoint(
+    limit: int = 50,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    return {"corrections": list_training_corrections(limit=limit)}
+
+
+# --- 6. Training Logs & Restore API ---
+
+@app.get("/training/logs")
+def get_training_logs_endpoint(
+    limit: int = 100,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    return {"logs": list_training_logs(limit=limit)}
+
+
+@app.post("/training/logs/{log_id}/restore")
+def restore_training_log_endpoint(
+    log_id: str,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    check_password(x_staff_password)
+    try:
+        result = restore_training_log(log_id=log_id, user="admin")
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# --- 7. Messaging API & Webhook Endpoints ---
+
+@app.post("/api/whatsapp/send")
+def send_message_endpoint(
+    body: SendMessageIn,
+    x_staff_password: Optional[str] = Header(default=None)
+):
+    """Test send an outgoing WhatsApp message using the canonical sendMessage function."""
+    check_password(x_staff_password)
+    try:
+        result = sendMessage(body.number, body.text)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/webhook")
+@app.post("/api/whatsapp/webhook")
+async def whatsapp_incoming_webhook(request: Request):
+    """
+    Webhook endpoint for incoming WhatsApp messages and voice notes.
+    Feeds incoming data through the Agent Training Center pipeline (audio transcription,
+    reply understanding, dynamic prompt building) and dispatches replies using sendMessage.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if body.get("event") and body.get("event") != "Message":
+        return {"status": "ignored", "reason": "non_message_event"}
+
+    # Extract sender number
+    raw_sender = (
+        body.get("data", {}).get("Info", {}).get("Sender") or
+        body.get("data", {}).get("Info", {}).get("Chat") or
+        body.get("data", {}).get("info", {}).get("Sender") or
+        body.get("from") or
+        body.get("number") or
+        body.get("sender") or
+        body.get("phone") or
+        body.get("data", {}).get("key", {}).get("remoteJid") or
+        ""
+    )
+
+    from_me = bool(
+        body.get("data", {}).get("Info", {}).get("IsFromMe") or
+        body.get("data", {}).get("info", {}).get("isFromMe") or
+        body.get("data", {}).get("key", {}).get("fromMe") or
+        body.get("fromMe") or
+        body.get("isFromMe")
+    )
+
+    if from_me:
+        return {"status": "ignored", "reason": "from_me"}
+
+    # Extract text content
+    text = (
+        body.get("data", {}).get("Message", {}).get("conversation") or
+        body.get("data", {}).get("Message", {}).get("extendedTextMessage", {}).get("text") or
+        body.get("data", {}).get("message", {}).get("conversation") or
+        body.get("text") or
+        body.get("message") if isinstance(body.get("message"), str) else None
+    )
+
+    # Extract audio/voice note metadata
+    audio_data = (
+        body.get("data", {}).get("Message", {}).get("audioMessage") or
+        body.get("data", {}).get("message", {}).get("audioMessage") or
+        body.get("audio")
+    )
+
+    if not raw_sender:
+        return {"status": "ignored", "reason": "missing_sender"}
+
+    try:
+        clean_number = normalize_phone_number(str(raw_sender).split("@")[0].split(":")[0])
+    except Exception as e:
+        return {"status": "error", "error": f"Invalid sender number: {e}"}
+
+    processed_text = str(text or "").strip()
+    audio_ref = None
+
+    # Step 1: Audio Transcription Skill if voice note
+    if audio_data or (isinstance(text, str) and text.startswith("Voice message")):
+        trans_skill = get_skill("transcription")
+        if trans_skill:
+            trans_res = trans_skill.execute(
+                {
+                    "audio_url": audio_data.get("url") if isinstance(audio_data, dict) else None,
+                    "audio_id": audio_data.get("id") if isinstance(audio_data, dict) else None,
+                    "text": processed_text,
+                },
+                {}
+            )
+            processed_text = trans_res.get("transcript") or processed_text
+            audio_ref = trans_res.get("original_audio_reference")
+
+    if not processed_text:
+        return {"status": "ignored", "reason": "no_text_or_audio_content"}
+
+    # Step 2: Reply Understanding Skill
+    understanding_skill = get_skill("understanding")
+    understanding_meta = {}
+    if understanding_skill:
+        sk_conf = get_training_skill("understanding") or {}
+        if sk_conf.get("enabled", 1):
+            understanding_meta = understanding_skill.execute({"text": processed_text}, sk_conf)
+
+    # Step 3: Dynamic Prompt Construction with Active Instructions & Matching Knowledge Chunks
+    system_prompt, meta = build_dynamic_prompt(processed_text)
+    if understanding_meta:
+        system_prompt += f"\n\n### Incoming Analysis\n{understanding_meta.get('summary', '')}"
+
+    # Step 4: Generate Assistant Reply
+    model_settings = get_setting("models", {}) or {}
+    provider_name = model_settings.get("default_provider", "anthropic")
+    model_name = (model_settings.get("default_model") or "").strip() or "claude-sonnet-5-5"
+
+    try:
+        active_key = get_active_provider_key(provider_name)
+        raw_key = crypto.decrypt_key(active_key["encrypted_key"]) if active_key else os.environ.get("ANTHROPIC_API_KEY", "")
+        base_url = active_key.get("base_url") if active_key else os.environ.get("ANTHROPIC_BASE_URL")
+        adapter = get_adapter(provider_name)
+        conv_payload = [{"role": "user", "content": processed_text}]
+        response = adapter.complete(
+            model=model_name,
+            messages=conv_payload,
+            system=system_prompt,
+            api_key=raw_key,
+            base_url=base_url
+        )
+        reply = response.content
+    except Exception as exc:
+        reply = "Thank you for reaching out to Octapus. Our team has received your message and will follow up shortly."
+
+    # Step 5: Send response via canonical sendMessage function
+    send_result = sendMessage(clean_number, reply)
+
+    return {
+        "status": "ok",
+        "to": clean_number,
+        "reply": reply,
+        "send_result": send_result,
+        "audio_ref": audio_ref,
+        "understanding": understanding_meta,
+        "used_instructions": meta.get("used_instructions", []),
+        "used_knowledge_chunks": meta.get("used_knowledge_chunks", [])
+    }
+

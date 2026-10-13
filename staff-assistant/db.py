@@ -126,7 +126,79 @@ def init_db(db_path: Optional[Path] = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_records(created_at);
             CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage_records(provider);
             CREATE INDEX IF NOT EXISTS idx_memory_approved ON memory_facts(is_approved);
+
+            -- Agent Training Center Tables
+            CREATE TABLE IF NOT EXISTS training_instructions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                priority INTEGER DEFAULT 1,
+                active INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS training_knowledge (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tags TEXT DEFAULT '',
+                source TEXT DEFAULT 'pasted',
+                chunk_index INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS training_skills (
+                skill_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1,
+                extra_instructions TEXT DEFAULT '',
+                tone TEXT DEFAULT 'Professional',
+                language TEXT DEFAULT 'auto',
+                templates TEXT DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS training_logs (
+                id TEXT PRIMARY KEY,
+                user TEXT NOT NULL DEFAULT 'admin',
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT,
+                details TEXT,
+                snapshot TEXT,
+                timestamp TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS training_corrections (
+                id TEXT PRIMARY KEY,
+                query TEXT NOT NULL,
+                bot_reply TEXT NOT NULL,
+                correction TEXT NOT NULL,
+                rating TEXT DEFAULT '',
+                instruction_id TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_training_inst_active ON training_instructions(active, priority);
+            CREATE INDEX IF NOT EXISTS idx_training_know_source ON training_knowledge(source);
+            CREATE INDEX IF NOT EXISTS idx_training_logs_time ON training_logs(timestamp);
         """)
+
+        # Seed initial skills if not present
+        default_skills = [
+            ("transcription", "Audio transcription", 1, "Download incoming audio notes, transcribe faithfully, and retain original audio metadata.", "Neutral", "auto", ""),
+            ("understanding", "Reply understanding", 1, "Detect language, determine intent (question, complaint, order, other), and detect sentiment before answering.", "Analytical", "auto", ""),
+            ("answering", "Answering", 1, "Answer questions strictly using saved knowledge. If an answer cannot be determined from saved knowledge, state that you will check with the team instead of guessing.", "Helpful", "auto", "I don't have that specific detail in our verified knowledge base yet. I will check with our team and verify for you."),
+            ("designing", "Designing", 1, "Generate design briefs, UI layouts, color palettes, and clean HTML/SVG mockups upon user request.", "Creative", "auto", ""),
+            ("documenting", "Documenting", 1, "Generate structured executive summaries, business reports, and itemized invoice documents upon user request.", "Formal", "auto", "")
+        ]
+        for sid, sname, en, extra, tone, lang, tmpl in default_skills:
+            conn.execute("""
+                INSERT OR IGNORE INTO training_skills (skill_id, name, enabled, extra_instructions, tone, language, templates, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (sid, sname, en, extra, tone, lang, tmpl, now_iso()))
     conn.close()
 
 
@@ -656,3 +728,618 @@ def clear_all_data(db_path: Optional[Path] = None) -> None:
         conn.execute("DELETE FROM memory_facts")
         conn.execute("DELETE FROM usage_records")
     conn.close()
+
+
+# ============================================================================
+# Agent Training Center CRUD & Operations
+# ============================================================================
+
+# --- 1. Instructions CRUD ---
+
+def list_training_instructions(active_only: bool = False, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Retrieve all instructions or only active instructions ordered by priority."""
+    conn = get_connection(db_path)
+    query = """
+        SELECT id, title, content, priority, active, created_at, updated_at
+        FROM training_instructions
+    """
+    if active_only:
+        query += " WHERE active = 1"
+    query += " ORDER BY priority ASC, created_at ASC"
+    rows = conn.execute(query).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_training_instruction(inst_id: str, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Retrieve a single instruction by ID."""
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM training_instructions WHERE id = ?", (inst_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_training_instruction(
+    title: str,
+    content: str,
+    priority: int = 1,
+    active: int = 1,
+    user: str = "admin",
+    db_path: Optional[Path] = None
+) -> Dict[str, Any]:
+    """Create a new training instruction and record audit log."""
+    inst_id = str(uuid.uuid4())
+    now = now_iso()
+    clean_title = title.strip()
+    clean_content = content.strip()
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("""
+            INSERT INTO training_instructions (id, title, content, priority, active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (inst_id, clean_title, clean_content, int(priority), int(active), now, now))
+    conn.close()
+
+    created = {
+        "id": inst_id,
+        "title": clean_title,
+        "content": clean_content,
+        "priority": int(priority),
+        "active": int(active),
+        "created_at": now,
+        "updated_at": now
+    }
+    add_training_log(
+        user=user,
+        action="create_instruction",
+        entity_type="instruction",
+        entity_id=inst_id,
+        details=f"Created instruction: '{clean_title}' (priority {priority})",
+        snapshot={"after": created},
+        db_path=db_path
+    )
+    return created
+
+
+def update_training_instruction(
+    inst_id: str,
+    title: str,
+    content: str,
+    priority: int = 1,
+    active: int = 1,
+    user: str = "admin",
+    db_path: Optional[Path] = None
+) -> Optional[Dict[str, Any]]:
+    """Update an existing training instruction and record audit log."""
+    before = get_training_instruction(inst_id, db_path)
+    if not before:
+        return None
+    now = now_iso()
+    clean_title = title.strip()
+    clean_content = content.strip()
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("""
+            UPDATE training_instructions
+            SET title = ?, content = ?, priority = ?, active = ?, updated_at = ?
+            WHERE id = ?
+        """, (clean_title, clean_content, int(priority), int(active), now, inst_id))
+    conn.close()
+
+    after = {
+        "id": inst_id,
+        "title": clean_title,
+        "content": clean_content,
+        "priority": int(priority),
+        "active": int(active),
+        "created_at": before.get("created_at", now),
+        "updated_at": now
+    }
+    add_training_log(
+        user=user,
+        action="update_instruction",
+        entity_type="instruction",
+        entity_id=inst_id,
+        details=f"Updated instruction: '{clean_title}'",
+        snapshot={"before": before, "after": after},
+        db_path=db_path
+    )
+    return after
+
+
+def delete_training_instruction(inst_id: str, user: str = "admin", db_path: Optional[Path] = None) -> bool:
+    """Delete a training instruction and record audit log."""
+    before = get_training_instruction(inst_id, db_path)
+    if not before:
+        return False
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("DELETE FROM training_instructions WHERE id = ?", (inst_id,))
+    conn.close()
+    add_training_log(
+        user=user,
+        action="delete_instruction",
+        entity_type="instruction",
+        entity_id=inst_id,
+        details=f"Deleted instruction: '{before.get('title', inst_id)}'",
+        snapshot={"before": before},
+        db_path=db_path
+    )
+    return True
+
+
+# --- 2. Knowledge / Studies Chunker & CRUD ---
+
+def chunk_text(text: str, chunk_size: int = 600, overlap: int = 100) -> List[str]:
+    """Split text into natural chunks preserving paragraphs and sentences."""
+    clean = text.strip()
+    if not clean:
+        return []
+    if len(clean) <= chunk_size:
+        return [clean]
+
+    # Split into paragraphs first
+    paragraphs = clean.split("\n\n")
+    chunks: List[str] = []
+    current_chunk: List[str] = []
+    current_len = 0
+
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        # If single paragraph exceeds chunk_size, split by sentences or spaces
+        if len(para) > chunk_size:
+            if current_chunk:
+                chunks.append("\n\n".join(current_chunk))
+                current_chunk = []
+                current_len = 0
+            # Sentence split
+            sentences = para.replace(". ", ".\n").splitlines()
+            s_accum = ""
+            for s in sentences:
+                s = s.strip()
+                if not s:
+                    continue
+                if len(s_accum) + len(s) + 1 <= chunk_size:
+                    s_accum = f"{s_accum} {s}".strip() if s_accum else s
+                else:
+                    if s_accum:
+                        chunks.append(s_accum)
+                    s_accum = s
+            if s_accum:
+                chunks.append(s_accum)
+            continue
+
+        if current_len + len(para) + 2 <= chunk_size:
+            current_chunk.append(para)
+            current_len += len(para) + 2
+        else:
+            chunks.append("\n\n".join(current_chunk))
+            current_chunk = [para]
+            current_len = len(para)
+
+    if current_chunk:
+        chunks.append("\n\n".join(current_chunk))
+
+    return [c.strip() for c in chunks if c.strip()]
+
+
+def add_training_knowledge(
+    title: str,
+    text: str,
+    tags: str = "",
+    source: str = "pasted",
+    user: str = "admin",
+    db_path: Optional[Path] = None
+) -> List[Dict[str, Any]]:
+    """Split text into chunks, save each chunk with metadata, and record audit log."""
+    chunks = chunk_text(text)
+    if not chunks:
+        chunks = [text.strip()]
+    now = now_iso()
+    saved: List[Dict[str, Any]] = []
+    conn = get_connection(db_path)
+    with conn:
+        for idx, chunk in enumerate(chunks):
+            cid = str(uuid.uuid4())
+            conn.execute("""
+                INSERT INTO training_knowledge (id, title, content, tags, source, chunk_index, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (cid, title.strip(), chunk, tags.strip(), source.strip(), idx, now, now))
+            saved.append({
+                "id": cid,
+                "title": title.strip(),
+                "content": chunk,
+                "tags": tags.strip(),
+                "source": source.strip(),
+                "chunk_index": idx,
+                "created_at": now,
+                "updated_at": now
+            })
+    conn.close()
+
+    add_training_log(
+        user=user,
+        action="add_knowledge",
+        entity_type="knowledge",
+        entity_id=saved[0]["id"] if saved else None,
+        details=f"Added knowledge '{title}' ({len(chunks)} chunks from source '{source}')",
+        snapshot={"after": saved},
+        db_path=db_path
+    )
+    return saved
+
+
+def list_training_knowledge(query: Optional[str] = None, limit: int = 100, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Search and list knowledge chunks."""
+    conn = get_connection(db_path)
+    if query and query.strip():
+        term = f"%{query.strip().lower()}%"
+        sql = """
+            SELECT * FROM training_knowledge
+            WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ? OR LOWER(tags) LIKE ? OR LOWER(source) LIKE ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """
+        rows = conn.execute(sql, (term, term, term, term, limit)).fetchall()
+    else:
+        sql = "SELECT * FROM training_knowledge ORDER BY created_at DESC LIMIT ?"
+        rows = conn.execute(sql, (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_training_knowledge(know_id: str, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Retrieve single knowledge chunk."""
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM training_knowledge WHERE id = ?", (know_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_training_knowledge(know_id: str, user: str = "admin", db_path: Optional[Path] = None) -> bool:
+    """Delete a single knowledge chunk."""
+    before = get_training_knowledge(know_id, db_path)
+    if not before:
+        return False
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("DELETE FROM training_knowledge WHERE id = ?", (know_id,))
+    conn.close()
+    add_training_log(
+        user=user,
+        action="delete_knowledge",
+        entity_type="knowledge",
+        entity_id=know_id,
+        details=f"Deleted knowledge chunk: '{before.get('title', know_id)}' (chunk {before.get('chunk_index', 0)})",
+        snapshot={"before": before},
+        db_path=db_path
+    )
+    return True
+
+
+def delete_training_knowledge_by_source(source: str, user: str = "admin", db_path: Optional[Path] = None) -> int:
+    """Delete all knowledge chunks belonging to a specific source file."""
+    conn = get_connection(db_path)
+    rows = conn.execute("SELECT * FROM training_knowledge WHERE source = ?", (source,)).fetchall()
+    if not rows:
+        conn.close()
+        return 0
+    before_items = [dict(r) for r in rows]
+    with conn:
+        conn.execute("DELETE FROM training_knowledge WHERE source = ?", (source,))
+    conn.close()
+    add_training_log(
+        user=user,
+        action="delete_knowledge_source",
+        entity_type="knowledge",
+        entity_id=source,
+        details=f"Deleted {len(before_items)} chunks for source '{source}'",
+        snapshot={"before": before_items},
+        db_path=db_path
+    )
+    return len(before_items)
+
+
+def get_top_matching_knowledge(query_text: str, limit: int = 4, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Retrieve top relevant knowledge chunks using term overlap scoring."""
+    tokens = [t.lower() for t in query_text.replace("?", " ").replace("!", " ").replace(".", " ").replace(",", " ").split() if len(t) > 2]
+    all_chunks = list_training_knowledge(limit=250, db_path=db_path)
+    if not all_chunks:
+        return []
+
+    if not tokens:
+        return all_chunks[:limit]
+
+    scored = []
+    for item in all_chunks:
+        score = 0
+        title_lower = (item.get("title") or "").lower()
+        content_lower = (item.get("content") or "").lower()
+        tags_lower = (item.get("tags") or "").lower()
+
+        for token in tokens:
+            if token in title_lower:
+                score += 3
+            if token in tags_lower:
+                score += 3
+            if token in content_lower:
+                score += 1
+        if score > 0:
+            scored.append((score, item))
+
+    # Sort descending by score
+    scored.sort(key=lambda x: x[0], reverse=True)
+    results = [item for _, item in scored[:limit]]
+    # If no keyword matches, fallback to first recent items
+    return results if results else all_chunks[:min(limit, 2)]
+
+
+# --- 3. Skills Configuration CRUD ---
+
+def list_training_skills(db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Retrieve all skill settings and configurations."""
+    conn = get_connection(db_path)
+    rows = conn.execute("SELECT * FROM training_skills ORDER BY skill_id ASC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_training_skill(skill_id: str, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Retrieve single skill setting."""
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM training_skills WHERE skill_id = ?", (skill_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_training_skill(
+    skill_id: str,
+    enabled: int,
+    extra_instructions: str,
+    tone: str,
+    language: str,
+    templates: str,
+    user: str = "admin",
+    db_path: Optional[Path] = None
+) -> Optional[Dict[str, Any]]:
+    """Update skill configuration (toggle, tone, language, extra_instructions, templates)."""
+    before = get_training_skill(skill_id, db_path)
+    if not before:
+        return None
+    now = now_iso()
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("""
+            UPDATE training_skills
+            SET enabled = ?, extra_instructions = ?, tone = ?, language = ?, templates = ?, updated_at = ?
+            WHERE skill_id = ?
+        """, (int(enabled), extra_instructions.strip(), tone.strip(), language.strip(), templates.strip(), now, skill_id))
+    conn.close()
+
+    after = {
+        "skill_id": skill_id,
+        "name": before.get("name", skill_id),
+        "enabled": int(enabled),
+        "extra_instructions": extra_instructions.strip(),
+        "tone": tone.strip(),
+        "language": language.strip(),
+        "templates": templates.strip(),
+        "updated_at": now
+    }
+    add_training_log(
+        user=user,
+        action="update_skill",
+        entity_type="skill",
+        entity_id=skill_id,
+        details=f"Updated skill '{after['name']}': enabled={bool(enabled)}, tone={tone}",
+        snapshot={"before": before, "after": after},
+        db_path=db_path
+    )
+    return after
+
+
+# --- 4. Training Logs & Restore ---
+
+def add_training_log(
+    user: str,
+    action: str,
+    entity_type: str,
+    entity_id: Optional[str],
+    details: str,
+    snapshot: Optional[Dict[str, Any]] = None,
+    db_path: Optional[Path] = None
+) -> Dict[str, Any]:
+    """Append a log entry tracking who, when, and what changed with optional state snapshot."""
+    log_id = str(uuid.uuid4())
+    now = now_iso()
+    snapshot_json = json.dumps(snapshot, ensure_ascii=False) if snapshot else ""
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("""
+            INSERT INTO training_logs (id, user, action, entity_type, entity_id, details, snapshot, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (log_id, user, action, entity_type, entity_id or "", details, snapshot_json, now))
+    conn.close()
+    return {
+        "id": log_id,
+        "user": user,
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": entity_id or "",
+        "details": details,
+        "timestamp": now
+    }
+
+
+def list_training_logs(limit: int = 100, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Retrieve training audit history ordered chronologically."""
+    conn = get_connection(db_path)
+    rows = conn.execute("SELECT * FROM training_logs ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    logs = []
+    for r in rows:
+        d = dict(r)
+        if d.get("snapshot"):
+            try:
+                d["snapshot_data"] = json.loads(d["snapshot"])
+            except Exception:
+                d["snapshot_data"] = None
+        logs.append(d)
+    return logs
+
+
+def restore_training_log(log_id: str, user: str = "admin", db_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Restore a previous version based on a log entry snapshot."""
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM training_logs WHERE id = ?", (log_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise ValueError(f"Log entry '{log_id}' not found.")
+
+    log_entry = dict(row)
+    snapshot_raw = log_entry.get("snapshot") or ""
+    if not snapshot_raw:
+        raise ValueError(f"No reversible snapshot data exists for log '{log_id}'.")
+
+    snapshot = json.loads(snapshot_raw)
+    action = log_entry.get("action", "")
+    entity_type = log_entry.get("entity_type", "")
+    restored_info = {}
+
+    conn = get_connection(db_path)
+    with conn:
+        if entity_type == "instruction":
+            # If deleted, restore 'before' state
+            if "delete" in action and "before" in snapshot:
+                b = snapshot["before"]
+                conn.execute("""
+                    INSERT OR REPLACE INTO training_instructions (id, title, content, priority, active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (b["id"], b["title"], b["content"], b["priority"], b["active"], b["created_at"], now_iso()))
+                restored_info = {"restored_instruction": b["id"]}
+            # If created, delete or deactivate
+            elif "create" in action and "after" in snapshot:
+                a = snapshot["after"]
+                conn.execute("DELETE FROM training_instructions WHERE id = ?", (a["id"],))
+                restored_info = {"removed_instruction": a["id"]}
+            # If updated, restore 'before' state
+            elif "update" in action and "before" in snapshot:
+                b = snapshot["before"]
+                conn.execute("""
+                    UPDATE training_instructions
+                    SET title = ?, content = ?, priority = ?, active = ?, updated_at = ?
+                    WHERE id = ?
+                """, (b["title"], b["content"], b["priority"], b["active"], now_iso(), b["id"]))
+                restored_info = {"reverted_instruction": b["id"]}
+
+        elif entity_type == "skill" and "before" in snapshot:
+            b = snapshot["before"]
+            conn.execute("""
+                UPDATE training_skills
+                SET enabled = ?, extra_instructions = ?, tone = ?, language = ?, templates = ?, updated_at = ?
+                WHERE skill_id = ?
+            """, (b["enabled"], b["extra_instructions"], b["tone"], b["language"], b["templates"], now_iso(), b["skill_id"]))
+            restored_info = {"reverted_skill": b["skill_id"]}
+
+        elif entity_type == "knowledge":
+            if "delete" in action and "before" in snapshot:
+                b = snapshot["before"]
+                items = b if isinstance(b, list) else [b]
+                for item in items:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO training_knowledge (id, title, content, tags, source, chunk_index, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (item["id"], item["title"], item["content"], item.get("tags", ""), item.get("source", "pasted"), item.get("chunk_index", 0), item["created_at"], now_iso()))
+                restored_info = {"restored_knowledge_count": len(items)}
+            elif "add" in action and "after" in snapshot:
+                a = snapshot["after"]
+                items = a if isinstance(a, list) else [a]
+                for item in items:
+                    conn.execute("DELETE FROM training_knowledge WHERE id = ?", (item["id"],))
+                restored_info = {"removed_knowledge_count": len(items)}
+
+    conn.close()
+
+    add_training_log(
+        user=user,
+        action="restore_version",
+        entity_type=entity_type,
+        entity_id=log_entry.get("entity_id"),
+        details=f"Restored version from log entry {log_id[:8]} ({action})",
+        snapshot={"restored_from": log_id},
+        db_path=db_path
+    )
+    return {"status": "ok", "restored": restored_info, "log_id": log_id}
+
+
+# --- 5. Corrections CRUD ---
+
+def add_training_correction(
+    query: str,
+    bot_reply: str,
+    correction: str,
+    rating: str = "",
+    create_instruction: bool = False,
+    user: str = "admin",
+    db_path: Optional[Path] = None
+) -> Dict[str, Any]:
+    """Save user test chat correction and optionally create an active instruction."""
+    cid = str(uuid.uuid4())
+    now = now_iso()
+    instruction_id = None
+
+    if create_instruction and correction.strip():
+        inst_title = f"Correction: {query[:35]}..." if len(query) > 35 else f"Correction: {query}"
+        inst_content = (
+            f"When the user asks: \"{query.strip()}\"\n"
+            f"Do NOT say: \"{bot_reply.strip()[:200]}\"\n"
+            f"Instead, answer: \"{correction.strip()}\""
+        )
+        new_inst = create_training_instruction(
+            title=inst_title,
+            content=inst_content,
+            priority=1,
+            active=1,
+            user=user,
+            db_path=db_path
+        )
+        instruction_id = new_inst["id"]
+
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("""
+            INSERT INTO training_corrections (id, query, bot_reply, correction, rating, instruction_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (cid, query.strip(), bot_reply.strip(), correction.strip(), rating.strip(), instruction_id, now))
+    conn.close()
+
+    add_training_log(
+        user=user,
+        action="correction",
+        entity_type="correction",
+        entity_id=cid,
+        details=f"Saved reply correction (rating='{rating}', new_instruction={bool(instruction_id)})",
+        snapshot={"query": query, "correction": correction, "instruction_id": instruction_id},
+        db_path=db_path
+    )
+
+    return {
+        "id": cid,
+        "query": query,
+        "bot_reply": bot_reply,
+        "correction": correction,
+        "rating": rating,
+        "instruction_id": instruction_id,
+        "created_at": now
+    }
+
+
+def list_training_corrections(limit: int = 50, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Retrieve history of saved corrections."""
+    conn = get_connection(db_path)
+    rows = conn.execute("SELECT * FROM training_corrections ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+

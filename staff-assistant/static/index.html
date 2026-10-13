@@ -791,6 +791,122 @@
   .settings-tab-pane { display: none; flex-direction: column; gap: 20px; }
   .settings-tab-pane.active { display: flex; }
 
+  /* Agent Training Center Subnav & Components */
+  .training-subnav {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 12px;
+    overflow-x: auto;
+  }
+  .training-subnav-btn {
+    padding: 8px 16px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .training-subnav-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface-hover);
+  }
+  .training-subnav-btn.active {
+    background: var(--btn-primary);
+    color: #FFF;
+    font-weight: 600;
+  }
+  .training-pane {
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .training-pane.active {
+    display: flex;
+  }
+  .training-item-card {
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 16px;
+    background: var(--bg-main);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .training-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    margin: 0;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background-color: var(--border-color);
+    border-radius: 24px;
+    transition: .2s;
+  }
+  .toggle-slider:before {
+    position: absolute; content: "";
+    height: 18px; width: 18px; left: 3px; bottom: 3px;
+    background-color: white; border-radius: 50%;
+    transition: .2s;
+  }
+  input:checked + .toggle-slider { background-color: var(--btn-primary); }
+  input:checked + .toggle-slider:before { transform: translateX(20px); }
+  .test-chat-box {
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    background: var(--bg-main);
+    height: 380px;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .test-chat-msg {
+    max-width: 85%;
+    padding: 12px 16px;
+    border-radius: 16px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  .test-chat-msg.user {
+    align-self: flex-end;
+    background: var(--btn-primary);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .test-chat-msg.bot {
+    align-self: flex-start;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-bottom-left-radius: 4px;
+  }
+  .metadata-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    border-radius: 8px;
+    background: var(--bg-surface-hover);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+  }
+
+
   /* Settings Components */
   .section-card {
     background-color: var(--bg-surface);
@@ -1144,6 +1260,13 @@
       <button type="button" class="settings-nav-btn" data-tab="appearance">Appearance</button>
       <button type="button" class="settings-nav-btn" data-tab="notifications">Notifications</button>
       <button type="button" class="settings-nav-btn" data-tab="account">Account</button>
+      <div class="settings-nav-title" style="margin-top:14px;">Training & AI</div>
+      <button type="button" class="settings-nav-btn" data-tab="training" id="navTrainingBtn" style="color:var(--btn-primary); font-weight:600;">
+        <svg class="svg-icon" style="width:14px;height:14px;margin-right:6px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+        Agent Training Center
+      </button>
     </nav>
 
     <div class="settings-content-wrap">
@@ -1394,6 +1517,184 @@
             </div>
             <div style="display:flex; justify-content:flex-end;">
               <button type="button" id="updatePasswordBtn" class="btn btn-primary">Update Password</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 10. AGENT TRAINING CENTER TAB -->
+        <div id="tab-training" class="settings-tab-pane">
+          <!-- Training Subnavigation -->
+          <div class="training-subnav">
+            <button type="button" class="training-subnav-btn active" data-subtab="instructions">📋 Instructions</button>
+            <button type="button" class="training-subnav-btn" data-subtab="knowledge">📚 Knowledge / Studies</button>
+            <button type="button" class="training-subnav-btn" data-subtab="skills">⚡ Skills</button>
+            <button type="button" class="training-subnav-btn" data-subtab="testchat">💬 Test Chat</button>
+            <button type="button" class="training-subnav-btn" data-subtab="logs">📜 Training Log</button>
+          </div>
+
+          <!-- SUBTAB A: INSTRUCTIONS -->
+          <div id="subtab-instructions" class="training-pane active">
+            <div class="section-card">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div>
+                  <div class="section-title">Rules & Personality Instructions</div>
+                  <div class="section-desc">Active instructions are dynamically injected with highest priority into the agent prompt.</div>
+                </div>
+                <button type="button" id="openAddInstructionBtn" class="btn btn-primary">+ Add Instruction</button>
+              </div>
+
+              <!-- Add/Edit Form Card -->
+              <div id="instructionFormCard" style="display:none; border:1px solid var(--border-color); border-radius:14px; padding:16px; background:var(--bg-main);">
+                <div style="font-weight:600; margin-bottom:12px;" id="instructionFormTitle">Add New Instruction</div>
+                <input type="hidden" id="editInstructionId" value="">
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label class="form-label">Instruction Title</label>
+                    <input type="text" id="instTitleInput" class="form-input" placeholder="e.g. Dubai Salutation & Courtesy">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Priority (1 = Highest, 10 = Lowest)</label>
+                    <input type="number" id="instPriorityInput" class="form-input" min="1" max="10" value="1">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-top:10px;">
+                  <label class="form-label">Instruction Content (Rules / Guidelines / Persona)</label>
+                  <textarea id="instContentInput" class="form-textarea" rows="3" placeholder="Define the exact rule, constraint, or behavioral guideline..."></textarea>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
+                  <label style="display:flex; align-items:center; gap:8px; font-size:0.88rem; cursor:pointer;">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="instActiveInput" checked>
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span>Active (Apply to Agent immediately)</span>
+                  </label>
+                  <div style="display:flex; gap:8px;">
+                    <button type="button" id="cancelInstructionBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="saveInstructionBtn" class="btn btn-primary">Save Instruction</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- List Container -->
+              <div id="instructionsListContainer" style="display:flex; flex-direction:column; gap:12px;"></div>
+            </div>
+          </div>
+
+          <!-- SUBTAB B: KNOWLEDGE / STUDIES -->
+          <div id="subtab-knowledge" class="training-pane">
+            <div class="section-card">
+              <div class="section-title">Verified Knowledge & Study Materials</div>
+              <div class="section-desc">Paste text or upload PDF, DOCX, or TXT documents. Text is automatically chunked and indexed.</div>
+
+              <!-- Paste / Upload Toggle Area -->
+              <div style="display:flex; gap:10px; margin-top:4px;">
+                <button type="button" id="knowledgeModePasteBtn" class="btn btn-primary" style="font-size:0.85rem; padding:6px 14px;">Paste Text</button>
+                <button type="button" id="knowledgeModeUploadBtn" class="btn btn-secondary" style="font-size:0.85rem; padding:6px 14px;">Upload Document (PDF/DOCX/TXT)</button>
+              </div>
+
+              <!-- Paste Form -->
+              <div id="knowledgePasteForm" style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label class="form-label">Study / Document Title</label>
+                    <input type="text" id="knowTitleInput" class="form-input" placeholder="e.g. Octapus Tailoring ERP User Guide">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Tags (comma-separated)</label>
+                    <input type="text" id="knowTagsInput" class="form-input" placeholder="e.g. erp, tailoring, pricing">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Document Content / Study Text</label>
+                  <textarea id="knowContentInput" class="form-textarea" rows="5" placeholder="Paste the reference text, pricing sheets, product specifications, or operational procedures..."></textarea>
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                  <button type="button" id="submitKnowledgeTextBtn" class="btn btn-primary">Chunk & Save Knowledge</button>
+                </div>
+              </div>
+
+              <!-- Upload Form -->
+              <div id="knowledgeUploadForm" style="display:none; flex-direction:column; gap:12px; margin-top:8px;">
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label class="form-label">Document Title (Optional)</label>
+                    <input type="text" id="knowUploadTitle" class="form-input" placeholder="Leave empty to use file name">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Tags</label>
+                    <input type="text" id="knowUploadTags" class="form-input" placeholder="e.g. manual, specs">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Choose File (PDF, DOCX, TXT)</label>
+                  <input type="file" id="knowFileInput" accept=".pdf,.docx,.txt,.md" class="form-input">
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                  <button type="button" id="submitKnowledgeUploadBtn" class="btn btn-primary">Extract & Chunk File</button>
+                </div>
+              </div>
+
+              <!-- Search & Filter Knowledge Chunks -->
+              <div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                  <div style="font-weight:600;">Saved Knowledge Chunks</div>
+                  <div style="display:flex; gap:8px;">
+                    <input type="text" id="knowledgeSearchInput" class="form-input" placeholder="Search chunks..." style="padding:6px 12px; font-size:0.85rem; width:220px;">
+                    <button type="button" id="refreshKnowledgeBtn" class="btn btn-secondary" style="padding:6px 12px; font-size:0.85rem;">Refresh</button>
+                  </div>
+                </div>
+                <div id="knowledgeListContainer" style="display:flex; flex-direction:column; gap:10px;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUBTAB C: SKILLS -->
+          <div id="subtab-skills" class="training-pane">
+            <div class="section-card">
+              <div class="section-title">Modular Agent Skills</div>
+              <div class="section-desc">Toggle and customize specialized capabilities. Each skill operates independently and formats dedicated prompt instructions.</div>
+              <div id="skillsListContainer" style="display:flex; flex-direction:column; gap:16px;"></div>
+            </div>
+          </div>
+
+          <!-- SUBTAB D: TEST CHAT -->
+          <div id="subtab-testchat" class="training-pane">
+            <div class="section-card">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div class="section-title">Agent Test Sandbox</div>
+                  <div class="section-desc">Test real-time replies. Inspect the active instructions and knowledge chunks used for each response.</div>
+                </div>
+                <button type="button" id="clearTestChatBtn" class="btn btn-secondary" style="padding:6px 12px; font-size:0.82rem;">Clear Sandbox</button>
+              </div>
+
+              <!-- Chat Message Container -->
+              <div id="testChatContainer" class="test-chat-box">
+                <div style="color:var(--text-secondary); font-size:0.85rem; text-align:center; padding:20px;">
+                  Send a test inquiry below to see how Horus reasons and grounds answers using the Agent Training Center.
+                </div>
+              </div>
+
+              <!-- Chat Input Bar -->
+              <div style="display:flex; gap:10px;">
+                <input type="text" id="testChatInput" class="form-input" placeholder="Type a message to test Horus..." style="flex:1;">
+                <button type="button" id="sendTestChatBtn" class="btn btn-primary">Send Test</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUBTAB E: TRAINING LOG -->
+          <div id="subtab-logs" class="training-pane">
+            <div class="section-card">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div class="section-title">Training Audit Log & Version History</div>
+                  <div class="section-desc">Comprehensive record of who, when, and what changed with version restore capabilities.</div>
+                </div>
+                <button type="button" id="refreshLogsBtn" class="btn btn-secondary" style="padding:6px 12px; font-size:0.82rem;">Refresh Log</button>
+              </div>
+              <div id="trainingLogsContainer" style="display:flex; flex-direction:column; gap:10px;"></div>
             </div>
           </div>
         </div>
@@ -1963,8 +2264,12 @@
       document.querySelectorAll(".settings-tab-pane").forEach(p => p.classList.remove("active"));
       btn.classList.add("active");
       const tab = btn.getAttribute("data-tab");
-      document.getElementById("tab-" + tab).classList.add("active");
+      const targetPane = document.getElementById("tab-" + tab);
+      if (targetPane) targetPane.classList.add("active");
       document.getElementById("settingsTabTitle").textContent = btn.textContent;
+      if (tab === "training") {
+        loadTrainingData();
+      }
     });
   });
 
@@ -2297,6 +2602,753 @@
       newChatBtn.click();
     }
   });
+
+  // ==========================================
+  // AGENT TRAINING CENTER JAVASCRIPT LOGIC
+  // ==========================================
+  let activeTrainingSubtab = "instructions";
+  let testChatSessionId = "training-sandbox-" + Date.now();
+
+  function loadTrainingData() {
+    if (activeTrainingSubtab === "instructions") loadTrainingInstructions();
+    else if (activeTrainingSubtab === "knowledge") loadTrainingKnowledge();
+    else if (activeTrainingSubtab === "skills") loadTrainingSkills();
+    else if (activeTrainingSubtab === "logs") loadTrainingLogs();
+  }
+
+  // Subnavigation switching
+  document.querySelectorAll(".training-subnav-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".training-subnav-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".training-pane").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      activeTrainingSubtab = btn.getAttribute("data-subtab");
+      const pane = document.getElementById("subtab-" + activeTrainingSubtab);
+      if (pane) pane.classList.add("active");
+      loadTrainingData();
+    });
+  });
+
+  // SUBTAB A: INSTRUCTIONS
+  const openAddInstructionBtn = document.getElementById("openAddInstructionBtn");
+  const instructionFormCard = document.getElementById("instructionFormCard");
+  const instructionFormTitle = document.getElementById("instructionFormTitle");
+  const editInstructionId = document.getElementById("editInstructionId");
+  const instTitleInput = document.getElementById("instTitleInput");
+  const instPriorityInput = document.getElementById("instPriorityInput");
+  const instContentInput = document.getElementById("instContentInput");
+  const instActiveInput = document.getElementById("instActiveInput");
+  const cancelInstructionBtn = document.getElementById("cancelInstructionBtn");
+  const saveInstructionBtn = document.getElementById("saveInstructionBtn");
+  const instructionsListContainer = document.getElementById("instructionsListContainer");
+
+  if (openAddInstructionBtn) {
+    openAddInstructionBtn.addEventListener("click", () => {
+      editInstructionId.value = "";
+      instTitleInput.value = "";
+      instPriorityInput.value = "1";
+      instContentInput.value = "";
+      instActiveInput.checked = true;
+      instructionFormTitle.textContent = "Add New Instruction";
+      instructionFormCard.style.display = "block";
+      instTitleInput.focus();
+    });
+  }
+
+  if (cancelInstructionBtn) {
+    cancelInstructionBtn.addEventListener("click", () => {
+      instructionFormCard.style.display = "none";
+    });
+  }
+
+  if (saveInstructionBtn) {
+    saveInstructionBtn.addEventListener("click", async () => {
+      const title = instTitleInput.value.trim();
+      const content = instContentInput.value.trim();
+      const priority = parseInt(instPriorityInput.value) || 1;
+      const active = instActiveInput.checked;
+      const instId = editInstructionId.value;
+
+      if (!title || !content) {
+        showToast("Please enter instruction title and content", "error");
+        return;
+      }
+
+      try {
+        saveInstructionBtn.disabled = true;
+        saveInstructionBtn.textContent = "Saving...";
+        const url = instId ? `/training/instructions/${instId}` : "/training/instructions";
+        const method = instId ? "PUT" : "POST";
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json", "X-Staff-Password": staffPassword },
+          body: JSON.stringify({ title, content, priority, active })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to save instruction");
+
+        showToast(instId ? "Instruction updated" : "Instruction created", "success");
+        instructionFormCard.style.display = "none";
+        loadTrainingInstructions();
+      } catch (err) {
+        showToast(err.message, "error");
+      } finally {
+        saveInstructionBtn.disabled = false;
+        saveInstructionBtn.textContent = "Save Instruction";
+      }
+    });
+  }
+
+  async function loadTrainingInstructions() {
+    if (!staffPassword || !instructionsListContainer) return;
+    try {
+      instructionsListContainer.innerHTML = '<div style="color:var(--text-tertiary); font-size:0.85rem; padding:12px;">Loading instructions...</div>';
+      const res = await fetch("/training/instructions", {
+        headers: { "X-Staff-Password": staffPassword }
+      });
+      if (!res.ok) throw new Error("Could not load instructions");
+      const instructions = await res.json();
+
+      if (!instructions || instructions.length === 0) {
+        instructionsListContainer.innerHTML = '<div style="color:var(--text-tertiary); font-size:0.88rem; padding:16px; text-align:center; border:1px dashed var(--border-color); border-radius:12px;">No custom rules or instructions added yet. Active instructions will always apply to Horus dynamically.</div>';
+        return;
+      }
+
+      instructionsListContainer.innerHTML = "";
+      instructions.forEach(inst => {
+        const card = document.createElement("div");
+        card.className = "training-item-card";
+        card.innerHTML = `
+          <div class="training-item-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="badge" style="background:var(--btn-primary); color:#fff; font-weight:600;">Priority ${inst.priority}</span>
+              <strong style="font-size:0.95rem;">${escapeHtml(inst.title)}</strong>
+              ${inst.active ? '<span class="badge badge-connected">ACTIVE</span>' : '<span class="badge" style="background:var(--bg-surface-hover); color:var(--text-tertiary);">INACTIVE</span>'}
+            </div>
+            <div style="display:flex; align-items:center; gap:12px;">
+              <label class="toggle-switch" title="Toggle active status">
+                <input type="checkbox" class="inst-active-toggle" data-id="${inst.id}" ${inst.active ? "checked" : ""}>
+                <span class="toggle-slider"></span>
+              </label>
+              <button type="button" class="btn btn-secondary edit-inst-btn" style="padding:4px 10px; font-size:0.8rem;" data-id="${inst.id}">Edit</button>
+              <button type="button" class="btn btn-danger delete-inst-btn" style="padding:4px 10px; font-size:0.8rem;" data-id="${inst.id}">Delete</button>
+            </div>
+          </div>
+          <div style="font-size:0.88rem; color:var(--text-secondary); white-space:pre-wrap; background:var(--bg-surface); padding:10px 12px; border-radius:10px; border:1px solid var(--border-color); font-family:monospace; line-height:1.4;">${escapeHtml(inst.content)}</div>
+          <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-tertiary);">
+            <span>ID: #${inst.id}</span>
+            <span>Last updated: ${new Date(inst.updated_at).toLocaleString()}</span>
+          </div>
+        `;
+
+        const toggle = card.querySelector(".inst-active-toggle");
+        toggle.addEventListener("change", async () => {
+          try {
+            const upRes = await fetch(\`/training/instructions/\${inst.id}\`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", "X-Staff-Password": staffPassword },
+              body: JSON.stringify({
+                title: inst.title,
+                content: inst.content,
+                priority: inst.priority,
+                active: toggle.checked
+              })
+            });
+            if (!upRes.ok) throw new Error("Failed to toggle instruction status");
+            showToast(\`Instruction "\${inst.title}" is now \${toggle.checked ? "Active" : "Inactive"}\`, "success");
+            loadTrainingInstructions();
+          } catch (e) {
+            showToast(e.message, "error");
+            toggle.checked = !toggle.checked;
+          }
+        });
+
+        const editBtn = card.querySelector(".edit-inst-btn");
+        editBtn.addEventListener("click", () => {
+          editInstructionId.value = inst.id;
+          instTitleInput.value = inst.title;
+          instPriorityInput.value = inst.priority;
+          instContentInput.value = inst.content;
+          instActiveInput.checked = !!inst.active;
+          instructionFormTitle.textContent = \`Edit Instruction #\${inst.id}\`;
+          instructionFormCard.style.display = "block";
+          instructionFormCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+
+        const delBtn = card.querySelector(".delete-inst-btn");
+        delBtn.addEventListener("click", async () => {
+          if (!confirm(\`Permanently delete instruction "\${inst.title}"?\`)) return;
+          try {
+            const dRes = await fetch(\`/training/instructions/\${inst.id}\`, {
+              method: "DELETE",
+              headers: { "X-Staff-Password": staffPassword }
+            });
+            if (!dRes.ok) throw new Error("Failed to delete instruction");
+            showToast("Instruction deleted", "success");
+            loadTrainingInstructions();
+          } catch (e) {
+            showToast(e.message, "error");
+          }
+        });
+
+        instructionsListContainer.appendChild(card);
+      });
+    } catch (err) {
+      instructionsListContainer.innerHTML = \`<div style="color:var(--text-danger); font-size:0.85rem; padding:12px;">Error: \${escapeHtml(err.message)}</div>\`;
+    }
+  }
+
+  // SUBTAB B: KNOWLEDGE / STUDIES
+  const knowledgeModePasteBtn = document.getElementById("knowledgeModePasteBtn");
+  const knowledgeModeUploadBtn = document.getElementById("knowledgeModeUploadBtn");
+  const knowledgePasteForm = document.getElementById("knowledgePasteForm");
+  const knowledgeUploadForm = document.getElementById("knowledgeUploadForm");
+  const knowTitleInput = document.getElementById("knowTitleInput");
+  const knowTagsInput = document.getElementById("knowTagsInput");
+  const knowContentInput = document.getElementById("knowContentInput");
+  const submitKnowledgeTextBtn = document.getElementById("submitKnowledgeTextBtn");
+  const knowUploadTitle = document.getElementById("knowUploadTitle");
+  const knowUploadTags = document.getElementById("knowUploadTags");
+  const knowFileInput = document.getElementById("knowFileInput");
+  const submitKnowledgeUploadBtn = document.getElementById("submitKnowledgeUploadBtn");
+  const knowledgeSearchInput = document.getElementById("knowledgeSearchInput");
+  const refreshKnowledgeBtn = document.getElementById("refreshKnowledgeBtn");
+  const knowledgeListContainer = document.getElementById("knowledgeListContainer");
+
+  if (knowledgeModePasteBtn) {
+    knowledgeModePasteBtn.addEventListener("click", () => {
+      knowledgePasteForm.style.display = "flex";
+      knowledgeUploadForm.style.display = "none";
+      knowledgeModePasteBtn.className = "btn btn-primary";
+      knowledgeModeUploadBtn.className = "btn btn-secondary";
+    });
+  }
+
+  if (knowledgeModeUploadBtn) {
+    knowledgeModeUploadBtn.addEventListener("click", () => {
+      knowledgePasteForm.style.display = "none";
+      knowledgeUploadForm.style.display = "flex";
+      knowledgeModeUploadBtn.className = "btn btn-primary";
+      knowledgeModePasteBtn.className = "btn btn-secondary";
+    });
+  }
+
+  if (submitKnowledgeTextBtn) {
+    submitKnowledgeTextBtn.addEventListener("click", async () => {
+      const title = knowTitleInput.value.trim();
+      const content = knowContentInput.value.trim();
+      const tags = knowTagsInput.value.trim();
+
+      if (!title || !content) {
+        showToast("Please provide document title and content", "error");
+        return;
+      }
+
+      try {
+        submitKnowledgeTextBtn.disabled = true;
+        submitKnowledgeTextBtn.textContent = "Chunking & Saving...";
+        const res = await fetch("/training/knowledge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Staff-Password": staffPassword },
+          body: JSON.stringify({ title, content, tags, source: "manual" })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to save knowledge");
+
+        showToast(\`Saved \${data.chunks_created || 1} knowledge chunk(s)!\`, "success");
+        knowContentInput.value = "";
+        knowTitleInput.value = "";
+        knowTagsInput.value = "";
+        loadTrainingKnowledge();
+      } catch (err) {
+        showToast(err.message, "error");
+      } finally {
+        submitKnowledgeTextBtn.disabled = false;
+        submitKnowledgeTextBtn.textContent = "Chunk & Save Knowledge";
+      }
+    });
+  }
+
+  if (submitKnowledgeUploadBtn) {
+    submitKnowledgeUploadBtn.addEventListener("click", async () => {
+      const file = knowFileInput.files[0];
+      if (!file) {
+        showToast("Please select a PDF, DOCX, or TXT file to upload", "error");
+        return;
+      }
+      const title = knowUploadTitle.value.trim() || file.name;
+      const tags = knowUploadTags.value.trim();
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          submitKnowledgeUploadBtn.disabled = true;
+          submitKnowledgeUploadBtn.textContent = "Extracting & Chunking...";
+          const dataUrl = e.target.result;
+          const base64Content = dataUrl.split(",")[1];
+
+          const res = await fetch("/training/knowledge/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Staff-Password": staffPassword },
+            body: JSON.stringify({
+              title,
+              file_base64: base64Content,
+              filename: file.name,
+              tags
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || "Failed to process document");
+
+          showToast(\`Extracted document: \${data.chunks_created || 1} chunks created!\`, "success");
+          knowFileInput.value = "";
+          knowUploadTitle.value = "";
+          knowUploadTags.value = "";
+          loadTrainingKnowledge();
+        } catch (err) {
+          showToast(err.message, "error");
+        } finally {
+          submitKnowledgeUploadBtn.disabled = false;
+          submitKnowledgeUploadBtn.textContent = "Extract & Chunk File";
+        }
+      };
+      reader.onerror = () => {
+        showToast("Failed to read file", "error");
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (knowledgeSearchInput) {
+    knowledgeSearchInput.addEventListener("input", () => {
+      loadTrainingKnowledge(knowledgeSearchInput.value.trim());
+    });
+  }
+
+  if (refreshKnowledgeBtn) {
+    refreshKnowledgeBtn.addEventListener("click", () => {
+      loadTrainingKnowledge(knowledgeSearchInput.value.trim());
+    });
+  }
+
+  async function loadTrainingKnowledge(query = "") {
+    if (!staffPassword || !knowledgeListContainer) return;
+    try {
+      knowledgeListContainer.innerHTML = '<div style="color:var(--text-tertiary); font-size:0.85rem; padding:8px;">Loading knowledge chunks...</div>';
+      const url = query ? \`/training/knowledge?q=\${encodeURIComponent(query)}\` : "/training/knowledge";
+      const res = await fetch(url, {
+        headers: { "X-Staff-Password": staffPassword }
+      });
+      if (!res.ok) throw new Error("Could not load knowledge chunks");
+      const chunks = await res.json();
+
+      if (!chunks || chunks.length === 0) {
+        knowledgeListContainer.innerHTML = '<div style="color:var(--text-tertiary); font-size:0.88rem; padding:16px; text-align:center; border:1px dashed var(--border-color); border-radius:12px;">No knowledge chunks found. Add text or upload a document to train the agent.</div>';
+        return;
+      }
+
+      knowledgeListContainer.innerHTML = "";
+      chunks.forEach(k => {
+        const item = document.createElement("div");
+        item.className = "training-item-card";
+        item.style.padding = "12px 14px";
+        const tagList = (k.tags || "").split(",").map(t => t.trim()).filter(Boolean);
+        const tagsHtml = tagList.map(t => \`<span class="badge" style="background:var(--bg-surface-hover); color:var(--text-secondary); font-size:0.75rem;">#\${escapeHtml(t)}</span>\`).join(" ");
+
+        item.innerHTML = `
+          <div class="training-item-header">
+            <div>
+              <strong style="font-size:0.92rem;">\${escapeHtml(k.title)}</strong>
+              <span class="badge" style="margin-left:6px; font-size:0.75rem; background:var(--bg-surface); border:1px solid var(--border-color);">\${escapeHtml(k.source || 'manual')}</span>
+              \${tagsHtml}
+            </div>
+            <button type="button" class="btn btn-danger del-know-btn" style="padding:3px 8px; font-size:0.78rem;" data-id="\${k.id}">Delete</button>
+          </div>
+          <div style="font-size:0.84rem; color:var(--text-secondary); line-height:1.45; background:var(--bg-surface); padding:8px 10px; border-radius:8px; border:1px solid var(--border-color); white-space:pre-wrap;">\${escapeHtml(k.content)}</div>
+          <div style="font-size:0.72rem; color:var(--text-tertiary); display:flex; justify-content:space-between;">
+            <span>Chunk #\${k.chunk_index} • ID: \${k.id}</span>
+            <span>Created: \${new Date(k.created_at).toLocaleDateString()}</span>
+          </div>
+        `;
+
+        item.querySelector(".del-know-btn").addEventListener("click", async () => {
+          if (!confirm(\`Delete this knowledge chunk?\`)) return;
+          try {
+            const dRes = await fetch(\`/training/knowledge/\${k.id}\`, {
+              method: "DELETE",
+              headers: { "X-Staff-Password": staffPassword }
+            });
+            if (!dRes.ok) throw new Error("Failed to delete knowledge chunk");
+            showToast("Knowledge chunk deleted", "success");
+            loadTrainingKnowledge(knowledgeSearchInput.value.trim());
+          } catch (e) {
+            showToast(e.message, "error");
+          }
+        });
+
+        knowledgeListContainer.appendChild(item);
+      });
+    } catch (err) {
+      knowledgeListContainer.innerHTML = \`<div style="color:var(--text-danger); font-size:0.85rem; padding:8px;">Error: \${escapeHtml(err.message)}</div>\`;
+    }
+  }
+
+  // SUBTAB C: SKILLS
+  const skillsListContainer = document.getElementById("skillsListContainer");
+
+  async function loadTrainingSkills() {
+    if (!staffPassword || !skillsListContainer) return;
+    try {
+      skillsListContainer.innerHTML = '<div style="color:var(--text-tertiary); font-size:0.85rem; padding:12px;">Loading modular skills...</div>';
+      const res = await fetch("/training/skills", {
+        headers: { "X-Staff-Password": staffPassword }
+      });
+      if (!res.ok) throw new Error("Could not load skills");
+      const skills = await res.json();
+
+      skillsListContainer.innerHTML = "";
+      skills.forEach(sk => {
+        const settings = sk.settings || {};
+        const card = document.createElement("div");
+        card.className = "training-item-card";
+        card.innerHTML = `
+          <div class="training-item-header">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <strong style="font-size:1.02rem;">\${escapeHtml(sk.name)}</strong>
+                <span class="badge" style="font-size:0.75rem; background:var(--bg-surface-hover);">\${sk.skill_id}</span>
+                \${sk.enabled ? '<span class="badge badge-connected">ENABLED</span>' : '<span class="badge" style="background:var(--bg-surface-hover); color:var(--text-tertiary);">DISABLED</span>'}
+              </div>
+              <div style="font-size:0.84rem; color:var(--text-secondary); margin-top:4px;">\${escapeHtml(sk.description)}</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" class="skill-enable-toggle" data-id="\${sk.skill_id}" \${sk.enabled ? "checked" : ""}>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:12px; padding:14px; margin-top:6px; display:flex; flex-direction:column; gap:10px;">
+            <div style="font-weight:600; font-size:0.88rem; color:var(--text-primary); display:flex; justify-content:space-between; align-items:center;">
+              <span>Skill Configuration & Behavior</span>
+              <span style="font-size:0.75rem; color:var(--text-tertiary); font-weight:normal;">Directly injected into dynamic prompt when enabled</span>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label class="form-label">Tone</label>
+                <input type="text" class="form-input sk-tone" value="\${escapeHtml(settings.tone || 'professional')}" placeholder="e.g. professional, concise, empathetic">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Language Mode</label>
+                <input type="text" class="form-input sk-lang" value="\${escapeHtml(settings.language || 'auto')}" placeholder="e.g. auto, en, ar">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Extra Skill Instructions</label>
+              <textarea class="form-textarea sk-extra" rows="2" placeholder="Custom rules specific to this skill...">\${escapeHtml(settings.extra_instructions || '')}</textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Templates / Formatting Standard</label>
+              <textarea class="form-textarea sk-templates" rows="2" placeholder="Templates, output patterns or document outlines...">\${escapeHtml(settings.templates || '')}</textarea>
+            </div>
+            <div style="display:flex; justify-content:flex-end;">
+              <button type="button" class="btn btn-primary save-skill-btn" data-id="\${sk.skill_id}" style="padding:6px 14px; font-size:0.84rem;">Save Skill Settings</button>
+            </div>
+          </div>
+        `;
+
+        const toggle = card.querySelector(".skill-enable-toggle");
+        toggle.addEventListener("change", async () => {
+          try {
+            const upRes = await fetch(\`/training/skills/\${sk.skill_id}\`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", "X-Staff-Password": staffPassword },
+              body: JSON.stringify({
+                enabled: toggle.checked,
+                settings: sk.settings || {}
+              })
+            });
+            if (!upRes.ok) throw new Error("Failed to toggle skill");
+            showToast(\`Skill \${sk.name} \${toggle.checked ? "enabled" : "disabled"}\`, "success");
+            loadTrainingSkills();
+          } catch (e) {
+            showToast(e.message, "error");
+            toggle.checked = !toggle.checked;
+          }
+        });
+
+        const saveBtn = card.querySelector(".save-skill-btn");
+        saveBtn.addEventListener("click", async () => {
+          const tone = card.querySelector(".sk-tone").value.trim();
+          const language = card.querySelector(".sk-lang").value.trim();
+          const extra_instructions = card.querySelector(".sk-extra").value.trim();
+          const templates = card.querySelector(".sk-templates").value.trim();
+
+          try {
+            saveBtn.disabled = true;
+            saveBtn.textContent = "Saving...";
+            const upRes = await fetch(\`/training/skills/\${sk.skill_id}\`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", "X-Staff-Password": staffPassword },
+              body: JSON.stringify({
+                enabled: toggle.checked,
+                settings: { tone, language, extra_instructions, templates }
+              })
+            });
+            if (!upRes.ok) throw new Error("Failed to save skill settings");
+            showToast(\`Settings for \${sk.name} saved!\`, "success");
+            loadTrainingSkills();
+          } catch (e) {
+            showToast(e.message, "error");
+          } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Save Skill Settings";
+          }
+        });
+
+        skillsListContainer.appendChild(card);
+      });
+    } catch (err) {
+      skillsListContainer.innerHTML = \`<div style="color:var(--text-danger); font-size:0.85rem; padding:12px;">Error: \${escapeHtml(err.message)}</div>\`;
+    }
+  }
+
+  // SUBTAB D: TEST CHAT
+  const clearTestChatBtn = document.getElementById("clearTestChatBtn");
+  const testChatContainer = document.getElementById("testChatContainer");
+  const testChatInput = document.getElementById("testChatInput");
+  const sendTestChatBtn = document.getElementById("sendTestChatBtn");
+
+  if (clearTestChatBtn) {
+    clearTestChatBtn.addEventListener("click", () => {
+      testChatSessionId = "training-sandbox-" + Date.now();
+      testChatContainer.innerHTML = `
+        <div style="color:var(--text-secondary); font-size:0.85rem; text-align:center; padding:20px;">
+          Sandbox cleared. Send a message below to test real-time prompt generation.
+        </div>
+      `;
+    });
+  }
+
+  async function handleSendTestChat() {
+    const msg = testChatInput.value.trim();
+    if (!msg) return;
+    testChatInput.value = "";
+
+    if (testChatContainer.children.length === 1 && testChatContainer.firstElementChild.textContent.includes("Send a test inquiry")) {
+      testChatContainer.innerHTML = "";
+    }
+
+    const userBubble = document.createElement("div");
+    userBubble.className = "test-chat-msg user";
+    userBubble.textContent = msg;
+    testChatContainer.appendChild(userBubble);
+
+    const botBubble = document.createElement("div");
+    botBubble.className = "test-chat-msg bot";
+    botBubble.innerHTML = \`<em>Horus is thinking & consulting training rules...</em>\`;
+    testChatContainer.appendChild(botBubble);
+    testChatContainer.scrollTop = testChatContainer.scrollHeight;
+
+    try {
+      sendTestChatBtn.disabled = true;
+      const res = await fetch("/training/test-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Staff-Password": staffPassword },
+        body: JSON.stringify({ message: msg, session_id: testChatSessionId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error from test chat");
+
+      const reply = data.reply || "";
+      const usedInst = data.used_instructions || [];
+      const usedKnow = data.used_knowledge || [];
+      const enSkills = data.enabled_skills || [];
+
+      const instPills = usedInst.length > 0
+        ? usedInst.map(i => \`<span class="metadata-pill" style="border-color:var(--btn-primary); color:var(--btn-primary);">📋 \${escapeHtml(i.title)} (P\${i.priority})</span>\`).join(" ")
+        : '<span style="font-size:0.75rem; color:var(--text-tertiary);">None</span>';
+
+      const knowPills = usedKnow.length > 0
+        ? usedKnow.map(k => \`<span class="metadata-pill" style="border-color:var(--status-connected); color:var(--status-connected);">📚 \${escapeHtml(k.title)}</span>\`).join(" ")
+        : '<span style="font-size:0.75rem; color:var(--text-tertiary);">None</span>';
+
+      const skillPills = enSkills.length > 0
+        ? enSkills.map(s => \`<span class="metadata-pill">⚡ \${escapeHtml(s)}</span>\`).join(" ")
+        : '<span style="font-size:0.75rem; color:var(--text-tertiary);">None</span>';
+
+      botBubble.innerHTML = `
+        <div style="white-space:pre-wrap; margin-bottom:12px;">\${escapeHtml(reply)}</div>
+        <div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:10px; padding:10px; font-size:0.78rem; display:flex; flex-direction:column; gap:6px;">
+          <div style="font-weight:600; color:var(--text-secondary); margin-bottom:2px;">Prompt Grounding Diagnostics:</div>
+          <div><strong>Active Instructions Used:</strong> \${instPills}</div>
+          <div><strong>Knowledge Chunks Retrieved:</strong> \${knowPills}</div>
+          <div><strong>Active Skills:</strong> \${skillPills}</div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:8px; border-top:1px solid var(--border-color);">
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="btn btn-secondary thumb-up-btn" style="padding:4px 8px; font-size:0.8rem;" title="Good answer">👍</button>
+            <button type="button" class="btn btn-secondary thumb-down-btn" style="padding:4px 8px; font-size:0.8rem;" title="Needs improvement">👎</button>
+          </div>
+          <button type="button" class="btn btn-secondary toggle-correct-btn" style="padding:4px 10px; font-size:0.78rem;">✏️ Correct this reply</button>
+        </div>
+        <div class="correction-form-box" style="display:none; margin-top:10px; padding:10px; background:var(--bg-main); border-radius:10px; border:1px dashed var(--btn-primary);">
+          <div style="font-size:0.8rem; font-weight:600; margin-bottom:6px;">Teach Horus the Correct Reply / Rule:</div>
+          <textarea class="form-textarea correct-text-input" rows="2" placeholder="Specify what Horus should have said or the rule to follow..."></textarea>
+          <div style="display:flex; justify-content:flex-end; gap:6px; margin-top:8px;">
+            <button type="button" class="btn btn-secondary cancel-correct-btn" style="padding:4px 10px; font-size:0.78rem;">Cancel</button>
+            <button type="button" class="btn btn-primary submit-correct-btn" style="padding:4px 10px; font-size:0.78rem;">Save Correction as Rule</button>
+          </div>
+        </div>
+      `;
+
+      const thumbUp = botBubble.querySelector(".thumb-up-btn");
+      const thumbDown = botBubble.querySelector(".thumb-down-btn");
+      thumbUp.addEventListener("click", () => {
+        thumbUp.style.background = "var(--btn-primary)";
+        thumbUp.style.color = "#fff";
+        showToast("Positive feedback recorded", "success");
+      });
+      thumbDown.addEventListener("click", () => {
+        thumbDown.style.background = "var(--text-danger)";
+        thumbDown.style.color = "#fff";
+        const form = botBubble.querySelector(".correction-form-box");
+        form.style.display = "block";
+      });
+
+      const correctToggleBtn = botBubble.querySelector(".toggle-correct-btn");
+      const correctionBox = botBubble.querySelector(".correction-form-box");
+      correctToggleBtn.addEventListener("click", () => {
+        correctionBox.style.display = correctionBox.style.display === "none" ? "block" : "none";
+      });
+
+      const cancelCorrectBtn = botBubble.querySelector(".cancel-correct-btn");
+      cancelCorrectBtn.addEventListener("click", () => {
+        correctionBox.style.display = "none";
+      });
+
+      const submitCorrectBtn = botBubble.querySelector(".submit-correct-btn");
+      const correctTextInput = botBubble.querySelector(".correct-text-input");
+      submitCorrectBtn.addEventListener("click", async () => {
+        const correction = correctTextInput.value.trim();
+        if (!correction) {
+          showToast("Please enter the correction", "error");
+          return;
+        }
+        try {
+          submitCorrectBtn.disabled = true;
+          submitCorrectBtn.textContent = "Saving...";
+          const cRes = await fetch("/training/corrections", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Staff-Password": staffPassword },
+            body: JSON.stringify({
+              message: msg,
+              reply: reply,
+              correction: correction,
+              session_id: testChatSessionId
+            })
+          });
+          const cData = await cRes.json();
+          if (!cRes.ok) throw new Error(cData.detail || "Failed to save correction");
+
+          showToast("Correction saved as active instruction and training log!", "success");
+          correctionBox.innerHTML = '<div style="color:var(--status-connected); font-size:0.8rem; font-weight:600; padding:6px 0;">✓ Correction successfully turned into an active agent instruction!</div>';
+        } catch (e) {
+          showToast(e.message, "error");
+          submitCorrectBtn.disabled = false;
+          submitCorrectBtn.textContent = "Save Correction as Rule";
+        }
+      });
+
+    } catch (err) {
+      botBubble.innerHTML = \`<span style="color:var(--text-danger);">Error: \${escapeHtml(err.message)}</span>\`;
+    } finally {
+      sendTestChatBtn.disabled = false;
+      testChatContainer.scrollTop = testChatContainer.scrollHeight;
+    }
+  }
+
+  if (sendTestChatBtn) sendTestChatBtn.addEventListener("click", handleSendTestChat);
+  if (testChatInput) {
+    testChatInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") handleSendTestChat();
+    });
+  }
+
+  // SUBTAB E: TRAINING LOG
+  const refreshLogsBtn = document.getElementById("refreshLogsBtn");
+  const trainingLogsContainer = document.getElementById("trainingLogsContainer");
+
+  if (refreshLogsBtn) {
+    refreshLogsBtn.addEventListener("click", () => {
+      loadTrainingLogs();
+    });
+  }
+
+  async function loadTrainingLogs() {
+    if (!staffPassword || !trainingLogsContainer) return;
+    try {
+      trainingLogsContainer.innerHTML = '<div style="color:var(--text-tertiary); font-size:0.85rem; padding:12px;">Loading audit logs...</div>';
+      const res = await fetch("/training/logs", {
+        headers: { "X-Staff-Password": staffPassword }
+      });
+      if (!res.ok) throw new Error("Could not load training logs");
+      const logs = await res.json();
+
+      if (!logs || logs.length === 0) {
+        trainingLogsContainer.innerHTML = '<div style="color:var(--text-tertiary); font-size:0.88rem; padding:16px; text-align:center; border:1px dashed var(--border-color); border-radius:12px;">No training log entries yet. Any edits to instructions, knowledge, skills, or corrections will appear here.</div>';
+        return;
+      }
+
+      trainingLogsContainer.innerHTML = "";
+      logs.forEach(log => {
+        const item = document.createElement("div");
+        item.className = "training-item-card";
+        item.style.padding = "12px 14px";
+        const hasOldValue = !!log.old_value;
+        const canRestore = hasOldValue && (log.action === "update" || log.action === "delete" || log.action === "correction");
+
+        const actionColor = log.action === "create" ? "var(--status-connected)" : log.action === "update" ? "var(--btn-primary)" : log.action === "delete" ? "var(--text-danger)" : "var(--text-secondary)";
+
+        item.innerHTML = `
+          <div class="training-item-header">
+            <div>
+              <span class="badge" style="background:\${actionColor}; color:#fff; font-size:0.75rem; text-transform:uppercase;">\${escapeHtml(log.action)}</span>
+              <strong style="font-size:0.9rem; margin-left:6px;">\${escapeHtml(log.target_type)} \${log.target_id ? '#' + log.target_id : ''}</strong>
+              <span style="font-size:0.75rem; color:var(--text-tertiary); margin-left:8px;">by \${escapeHtml(log.actor || 'admin')}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.75rem; color:var(--text-tertiary);">\${new Date(log.created_at).toLocaleString()}</span>
+              \${canRestore ? \`<button type="button" class="btn btn-secondary restore-log-btn" style="padding:3px 8px; font-size:0.75rem;" data-id="\${log.id}">↺ Restore Version</button>\` : ''}
+            </div>
+          </div>
+          <div style="font-size:0.84rem; color:var(--text-secondary); line-height:1.4; background:var(--bg-surface); padding:8px 10px; border-radius:8px; border:1px solid var(--border-color); font-family:monospace;">\${escapeHtml(log.details || '')}</div>
+        `;
+
+        if (canRestore) {
+          item.querySelector(".restore-log-btn").addEventListener("click", async () => {
+            if (!confirm(\`Are you sure you want to restore the previous state from log #\${log.id}?\`)) return;
+            try {
+              const rRes = await fetch(\`/training/logs/\${log.id}/restore\`, {
+                method: "POST",
+                headers: { "X-Staff-Password": staffPassword }
+              });
+              const rData = await rRes.json();
+              if (!rRes.ok) throw new Error(rData.detail || "Failed to restore version");
+              showToast("Previous version successfully restored!", "success");
+              loadTrainingLogs();
+              loadTrainingData();
+            } catch (e) {
+              showToast(e.message, "error");
+            }
+          });
+        }
+
+        trainingLogsContainer.appendChild(item);
+      });
+    } catch (err) {
+      trainingLogsContainer.innerHTML = \`<div style="color:var(--text-danger); font-size:0.85rem; padding:12px;">Error: \${escapeHtml(err.message)}</div>\`;
+    }
+  }
 
   // --- CHANGE PASSWORD ---
   document.getElementById("updatePasswordBtn").addEventListener("click", async () => {
