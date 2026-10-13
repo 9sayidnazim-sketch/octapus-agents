@@ -60,6 +60,24 @@ class TestTTSPipeline(unittest.TestCase):
         self.assertTrue(data_url.startswith("data:audio/mpeg;base64,"))
 
     @patch("httpx.Client")
+    def test_tts_synthesize_raw_base64(self, mock_client_cls):
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"mp3data"
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        handler = TTSHandler(elevenlabs_api_key="test-key")
+        res = handler.synthesize_raw_base64("Hello")
+
+        self.assertIsNotNone(res)
+        b64, mime = res
+        self.assertEqual(mime, "audio/mpeg")
+        self.assertFalse(b64.startswith("data:"))
+
+
+    @patch("httpx.Client")
     def test_tts_api_error_graceful_handling(self, mock_client_cls):
         mock_client = MagicMock()
         mock_response = MagicMock()

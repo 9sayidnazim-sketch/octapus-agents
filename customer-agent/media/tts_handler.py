@@ -12,13 +12,23 @@ from __future__ import annotations
 import base64
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
 logger = logging.getLogger("octapus.media.tts")
 
-DEFAULT_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel / standard voice
+BASE_DIR = Path(__file__).resolve().parent.parent
+for env_path in (BASE_DIR / ".env", BASE_DIR.parent / ".env"):
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+
+DEFAULT_ELEVENLABS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"  # George (premade voice supported on all tiers)
 DEFAULT_ELEVENLABS_MODEL = "eleven_multilingual_v2"
 DEFAULT_TIMEOUT = 15.0
 
@@ -31,12 +41,14 @@ class TTSHandler:
         model_id: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
     ):
-        self.elevenlabs_api_key = (
-            elevenlabs_api_key
-            or os.environ.get("ELEVENLABS_API_KEY")
-            or os.environ.get("TTS_API_KEY")
-            or ""
-        )
+        if elevenlabs_api_key is not None:
+            self.elevenlabs_api_key = elevenlabs_api_key
+        else:
+            self.elevenlabs_api_key = (
+                os.environ.get("ELEVENLABS_API_KEY")
+                or os.environ.get("TTS_API_KEY")
+                or ""
+            )
         self.voice_id = (
             voice_id
             or os.environ.get("ELEVENLABS_VOICE_ID")
@@ -123,3 +135,21 @@ class TTSHandler:
         audio_bytes, mimetype = result
         b64 = base64.b64encode(audio_bytes).decode("ascii")
         return f"data:{mimetype};base64,{b64}"
+
+    def synthesize_raw_base64(
+        self,
+        text: str,
+        voice_id: Optional[str] = None,
+    ) -> Optional[Tuple[str, str]]:
+        """
+        Synthesizes text to audio and returns (raw_base64_string, mimetype)
+        without the data: URI wrapper.
+        """
+        result = self.synthesize_speech(text, voice_id=voice_id)
+        if not result:
+            return None
+
+        audio_bytes, mimetype = result
+        b64 = base64.b64encode(audio_bytes).decode("ascii")
+        return b64, mimetype
+

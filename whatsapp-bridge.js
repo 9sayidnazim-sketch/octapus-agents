@@ -407,6 +407,12 @@ async function sendGatewayMedia(number, type = "audio", url, apiKey = API_KEY, m
     ])
   ).filter(Boolean);
 
+  // Unwrap data URIs (e.g. data:audio/mpeg;base64,...) to raw base64 for Orbit Gateway
+  let cleanUrl = url;
+  if (typeof cleanUrl === "string" && cleanUrl.startsWith("data:") && cleanUrl.includes(";base64,")) {
+    cleanUrl = cleanUrl.split(";base64,")[1];
+  }
+
   for (const token of candidateKeys) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -419,10 +425,10 @@ async function sendGatewayMedia(number, type = "audio", url, apiKey = API_KEY, m
           body: JSON.stringify({
             number: number,
             type: type,
-            url: url,
+            url: cleanUrl,
             caption: "",
           }),
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(15000),
         });
 
         if (response.ok) {
