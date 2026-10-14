@@ -16,3 +16,4 @@ node_modules/
 *.mp3
 customer-agent/media/recordings/
 customer-agent/static/generated_docs/
+.openpost/

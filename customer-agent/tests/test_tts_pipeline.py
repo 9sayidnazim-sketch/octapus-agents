@@ -98,6 +98,9 @@ class TestTTSPipeline(unittest.TestCase):
         self.assertTrue(is_malayalam_or_manglish("നമസ്കാരം, സുഖമാണോ?"))
         self.assertTrue(is_malayalam_or_manglish("Njan Horus AI aanu. Entha vishesham?"))
         self.assertTrue(is_malayalam_or_manglish("Sheri, nale ravile remind cheyyam."))
+        self.assertTrue(is_malayalam_or_manglish("Pwoli machane, scene illa! Ippo thanne set aakkam."))
+        self.assertTrue(is_malayalam_or_manglish("Kidu vibe aanu bro, karyam paranjolu."))
+        self.assertTrue(is_malayalam_or_manglish("Pinneentha aliya, nammal katta support aanu!"))
         self.assertFalse(is_malayalam_or_manglish("Good morning, how are you today?"))
 
     @patch("httpx.Client")

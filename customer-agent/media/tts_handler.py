@@ -40,20 +40,37 @@ DEFAULT_TIMEOUT = 15.0
 MALAYALAM_SCRIPT_PATTERN = re.compile(r"[\u0D00-\u0D7F]")
 
 MANGLISH_TERMS = {
-    "njan", "njanum", "njanundu", "njangal", "nammal", "namukku",
-    "entha", "enthe", "enthoru", "enthina", "enthokke", "enthoke",
-    "parayu", "parayoo", "parayaam", "parayumo", "paranjath", "paranjathu",
-    "aanu", "aano", "aayirunnu", "aayirikkum", "alla", "allallo", "alle",
-    "undo", "illa", "illallo", "ille",
-    "cheyyam", "cheyyaam", "cheyyo", "cheyyu", "cheyyoo", "cheyyan", "cheythath",
+    # Pronouns & Pointers
+    "njan", "njanum", "njanundu", "njangal", "nammal", "namukku", "namukk",
+    "nee", "ninakku", "ninakk", "ningal", "ningalkku", "ningalkk", "pulli", "pullikku",
+    "ithu", "athu", "ithil", "athil", "ithinte", "athinte", "ithokke", "athokke",
+    # Question & Relative Words
+    "entha", "enthe", "enthoru", "enthina", "enthinanu", "enthokke", "enthoke",
+    "engane", "enganeya", "enganeyanu", "evide", "evideya", "evideyanu", "aarannu", "aaranu",
+    "eppol", "eppozha", "eppozhanu",
+    # Original Slang & Casual Vernacular
+    "pwoli", "poli", "poliyalle", "kidu", "kidilam", "adipoli", "adipoliyayi",
+    "scene", "sceneilla", "sceneillallo", "sceneaano", "sceneaakkanda",
+    "machane", "machan", "aliya", "bro", "changathi", "kootukara",
+    "set", "setaakkam", "setaakki", "setaakkiko",
+    "pinneentha", "pinnalla", "pinneyentha", "pinne", "pinneyum",
+    "vibe", "mass", "theerkkam", "nokkikolam", "nokkam", "nokku",
+    "karyam", "karyangal", "kollam", "kollaam", "kollallo",
+    "paranjolu", "parayedo", "parayeda", "parayoo", "parayu", "parayaam", "parayumo", "paranjath", "paranjathu",
+    "chettan", "chetta", "chechi", "itha", "ikka",
+    "kozhappam", "kozhappamilla", "prashnam", "prashnamilla",
+    "chumma", "aatto", "ketto", "kettoda", "thakarkkam", "polikkam", "valya", "nalla",
+    "ippo", "ippozhe", "ippol", "udane", "nerathe", "neram",
+    # Auxiliaries, Verbs & Affirmations
+    "aanu", "aano", "aayirunnu", "aayirikkum", "alla", "allallo", "alle", "aatto",
+    "undo", "illa", "illallo", "ille", "undallo",
+    "cheyyam", "cheyyaam", "cheyyo", "cheyyu", "cheyyoo", "cheyyan", "cheythath", "cheytho", "cheythu",
     "pattilla", "pattum", "pattumo",
-    "shari", "sheri", "sheriya", "sheriyanu",
-    "ravile", "vaikitt", "uchakk", "innu", "naale", "nale",
-    "engane", "evide", "evideya", "aarannu",
+    "shari", "sheri", "sheriya", "sheriyanu", "sherikkum",
+    "ravile", "vaikitt", "vaikittu", "uchakk", "uchakku", "innu", "naale", "nale", "mattanale",
     "vishesham", "visheshangal", "sugham", "sukham", "sukhamano", "sughamano",
-    "kurachu", "oru", "athe", "athano", "athinu",
-    "venam", "venda", "koodi", "pinne", "nokkam", "nokku",
-    "tharam", "tharaam", "thayo", "chetta", "chechi",
+    "kurachu", "oru", "athe", "athano", "athinu", "athre",
+    "venam", "venda", "koodi", "kooduthal", "tharam", "tharaam", "thayo",
     "namaskaram", "swagatham", "sugamano", "santhosham",
 }
 
@@ -69,50 +86,103 @@ def is_malayalam_or_manglish(text: str) -> bool:
     return match_count >= 1
 
 
-def clean_for_speech(text: str) -> str:
-    """Prepare raw assistant output for spoken audio synthesis.
+def sanitize_for_speech(text: str, user_lang: str = "en") -> str:
+    """Prepares raw AI model output for natural, clean Text-to-Speech synthesis.
 
-    Strips:
-    - Internal bracketed tags (e.g. [From Verified Management...], [Voice note transcript...])
-    - Markdown headings, bold, italics, tables, and backticks
+    Strictly strips:
+    - Raw JSON / JSON objects (e.g. {"status": "ok", ...}, {"reply": ...})
+    - Code blocks (```...```) and inline backticks
+    - Technical tags, HTML/XML tags, internal system tags ([Voice note transcript:...], [From Verified Management...])
+    - Markdown headings (#), bold/italics (**, __, *, _), strikethrough (~~), blockquotes (>), tables (|), dividers (---)
     - Markdown links [Label](url) -> converted to just Label
-    - Bare URLs
-    - Bullet point dashes and list numbers
-    - Accidental false capability denials (e.g. "I cannot generate audio")
+    - Bare URLs (https://... or http://...)
+    - Bullet markers (- , * , • ) and list numbers (1. , 2. )
+    - Emojis and non-spoken unicode symbols
+    - Literal technical artifacts ("undefined", "null", "NaN", "{question}", "${...}")
+    - Technical error strings (HTTP 403, Traceback, Exception, APIError, Insufficient account balance)
+    - Accidental capability denials ("I cannot generate audio")
+
+    Enforces:
+    - Clean conversational sentence structure (1-3 sentences maximum for voice)
+    - Graceful non-empty spoken fallback: If empty or inaudible, returns "Sorry, could you repeat that?"
+      (or Malayalam if Malayalam detected: "Kshamikkanam, onnukoodi parayaamo?")
     """
     if not text:
-        return ""
+        return "Kshamikkanam, onnukoodi parayaamo?" if user_lang in ("ml", "manglish") else "Sorry, could you repeat that?"
 
-    s = text.strip()
+    s = str(text).strip()
 
-    # 1. Remove bracketed system prefix tags
-    s = re.sub(
-        r"\[(?:From Verified Management|Voice note transcript|Vision OCR|Vision Analysis)[^\]]*\]:?\s*",
-        "",
-        s,
-        flags=re.IGNORECASE,
-    )
+    # 1. Catch technical error traces or API error dictionaries
+    if re.search(r"\b(?:traceback|error code:\s*\d+|api[_\s]?error|insufficient[_\s]?balance|internal server error|http\s*(?:40\d|50\d))\b", s, re.I):
+        return (
+            "Kshamikkanam, oru technical issue undayi. Onnukoodi parayaamo?"
+            if user_lang in ("ml", "manglish")
+            else "I am sorry, I encountered a temporary technical issue. Could you please repeat your question?"
+        )
 
-    # 2. Remove code blocks and inline code
+    # 2. Extract content from JSON if the response is wrapped in JSON
+    if s.startswith("{") and s.endswith("}"):
+        try:
+            import json as _json
+            parsed = _json.loads(s)
+            for k in ("reply", "message", "answer", "text", "content", "response"):
+                if k in parsed and isinstance(parsed[k], str) and parsed[k].strip():
+                    s = parsed[k].strip()
+                    break
+        except Exception:
+            pass
+
+    # 3. Strip code blocks ``` ... ```
     s = re.sub(r"```[\s\S]*?```", "", s)
+    # Strip inline code backticks `code` -> code
     s = re.sub(r"`([^`]+)`", r"\1", s)
 
-    # 3. Convert markdown links [Label](url) -> Label
+    # 4. Strip bracketed system tags
+    s = re.sub(r"\[(?:Voice note transcript|From Verified Management|Vision OCR|Vision Analysis|Tool Result|Inaudible)[^\]]*\]:?\s*", "", s, re.I)
+
+    # 5. Handle Markdown links [Label](url) -> Label
     s = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", s)
 
-    # 4. Remove bare URLs
+    # 6. Convert emails: info@octapus.ae -> info at octapus dot a e
+    s = re.sub(r"\b([a-zA-Z0-9_.+-]+)@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)\b", r"\1 at \2", s)
+    s = re.sub(r"\.([a-z]{2,4})\b", r" dot \1", s)
+
+    # 7. Strip bare URLs (http://... or https://...)
     s = re.sub(r"https?://\S+", "", s)
 
-    # 5. Remove markdown headers and emphasis
-    s = re.sub(r"#+\s*", "", s)
+    # 8. Strip markdown headings (#)
+    s = re.sub(r"^\s*#+\s*", "", s, flags=re.MULTILINE)
+
+    # 9. Strip bold/italic (**text**, __text__, *text*, _text_)
     s = re.sub(r"(\*\*|__)(.*?)\1", r"\2", s)
     s = re.sub(r"(\*|_)(.*?)\1", r"\2", s)
+    s = re.sub(r"~~(.*?)~~", r"\1", s)
 
-    # 6. Remove bullet markers and list numbers
+    # 10. Strip blockquotes (>) and table formatting (|)
+    s = re.sub(r"^\s*>\s*", "", s, flags=re.MULTILINE)
+    s = re.sub(r"\|", " ", s)
+    s = re.sub(r"[-=]{3,}", "", s)
+
+    # 11. Normalize bullet points and numbered lists to pauses / periods
     s = re.sub(r"^\s*[-*•]\s+", "", s, flags=re.MULTILINE)
     s = re.sub(r"^\s*\d+\.\s+", "", s, flags=re.MULTILINE)
 
-    # 7. Strip accidental false capability denials
+    # 12. Strip literal technical artifacts and placeholders
+    s = re.sub(r"\b(?:undefined|null|NaN|\[object Object\])\b", "", s, re.I)
+    s = re.sub(r"\{[a-zA-Z0-9_\s-]+\}", "", s)  # {question}, {user_message}
+    s = re.sub(r"\$\{[^}]+\}", "", s)
+
+    # 13. Strip HTML / XML tags (<tag> ... </tag> or <tag/>)
+    s = re.sub(r"<[^>]+>", "", s)
+
+    # 14. Strip emojis and decorative symbols
+    s = re.sub(r"[\U00010000-\U0010ffff]", "", s)
+    s = re.sub(r"[\u2600-\u27bf]", "", s)
+
+    # 15. Clean stray brackets and braces
+    s = re.sub(r"[{}\[\]\(\)]", " ", s)
+
+    # 16. Strip accidental false capability denials
     s = re.sub(
         r"\b(?:I cannot generate audio|I am unable to generate audio|I cannot speak|I do not have a voice|Enikku audio generate cheyyaan pattilla)[^.]*\.\s*",
         "",
@@ -120,21 +190,40 @@ def clean_for_speech(text: str) -> str:
         flags=re.IGNORECASE,
     )
 
-    # 8. Normalize spaces and empty lines
+    # 17. Normalize spaces and multiple punctuation
     s = re.sub(r"[ \t]+", " ", s)
-    s = re.sub(r"\n{2,}", "\n", s).strip()
+    s = re.sub(r"\n+", ". ", s)
+    s = re.sub(r"\.{2,}", ".", s)
+    s = re.sub(r"\s+([.,!?])", r"\1", s)
+    s = s.strip(" \t\n\r")
+
+    # 18. Ensure 1-3 natural spoken sentences
+    sentences = [sent.strip() for sent in re.split(r"(?<=[.!?])\s+", s) if sent.strip()]
+    if len(sentences) > 3:
+        s = " ".join(sentences[:3])
+    elif sentences:
+        s = " ".join(sentences)
+
+    if not s or len(s.strip(" .!?")) < 2:
+        return "Kshamikkanam, onnukoodi parayaamo?" if user_lang in ("ml", "manglish") else "Sorry, could you repeat that?"
 
     return s
 
 
+def clean_for_speech(text: str) -> str:
+    """Prepare raw assistant output for spoken audio synthesis (backward-compatible wrapper)."""
+    lang = "ml" if is_malayalam_or_manglish(text) else "en"
+    return sanitize_for_speech(text, user_lang=lang)
+
+
 VOICE_REQUEST_TRIGGERS = [
-    # Manglish / Malayalam triggers
+    # Manglish / Malayalam triggers (including authentic casual slang triggers)
     r"\bvoice\s*aay[it]*\b",
     r"\baudio\s*aay[it]*\b",
     r"\bvoice[-\s]*il\b",
     r"\baudio[-\s]*il\b",
-    r"\bvoice\s*ayakk\b",
-    r"\baudio\s*ayakk\b",
+    r"\bvoice\s*(?:note\s*)?ayakk\b",
+    r"\baudio\s*(?:note\s*)?ayakk\b",
     r"\bvoice\s*para\b",
     r"\baudio\s*para\b",
     r"\bparay[uu]*\s*voice\b",
@@ -147,6 +236,12 @@ VOICE_REQUEST_TRIGGERS = [
     r"\baudio\s*tharaamo\b",
     r"\bvoice\s*reply\b",
     r"\baudio\s*reply\b",
+    r"\bvoice\s*(?:note\s*)?(?:thaa|tharu|vidu|parayoo|paraye|therumo)\b",
+    r"\b(?:oru\s*)?voice\s*(?:note|msg|message)\b",
+    r"\bvoice\s*aayitt\s*(?:para|parayoo|parayaam)\b",
+    r"\bvoice[-\s]*il\s*(?:para|parayoo|paraye|therumo)\b",
+    r"\baudio\s*(?:note\s*)?(?:vidu|thaa|parayu|parayoo)\b",
+    r"\bshabdathil\s*(?:para|parayoo)\b",
     # English triggers
     r"\bread\s*(?:this\s*)?(?:out\s*)?aloud\b",
     r"\breply\s*in\s*voice\b",
@@ -162,7 +257,11 @@ VOICE_REQUEST_TRIGGERS = [
     r"\bdo\s*you\s*have\s*(?:a\s*)?voice\b",
     # Malayalam script
     r"വോയ്സ്\s*ആയി",
+    r"വോയ്സ്\s*നോട്ട്",
+    r"വോയ്സ്\s*അയക്കൂ",
+    r"വോയ്സ്\s*അയക്ക്",
     r"ഓഡിയോ\s*അയക്കൂ",
+    r"ഓഡിയോ\s*അയക്ക്",
     r"ശബ്ദത്തിൽ\s*പറയൂ",
     r"വായിച്ചു\s*കേൾപ്പിക്കൂ",
     r"സംസാരിക്കൂ",

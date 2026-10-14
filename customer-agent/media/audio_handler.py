@@ -21,6 +21,37 @@ DEFAULT_STT_URL = "https://api.openai.com/v1/audio/transcriptions"
 DEFAULT_STT_MODEL = "whisper-1"
 
 
+def probe_audio_metadata(path: Path) -> dict:
+    """Extract format, size, sample rate, duration, and channel metadata from audio file."""
+    meta = {
+        "format": path.suffix.lower().lstrip("."),
+        "size_bytes": path.stat().st_size if path.exists() else 0,
+        "sample_rate": "16000",
+        "duration_seconds": "unknown",
+        "channels": "mono",
+    }
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if ffmpeg_bin and path.exists():
+        try:
+            import re
+            cmd = [ffmpeg_bin, "-i", str(path)]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+            out = res.stderr
+            dur_m = re.search(r"Duration:\s*(\d+):(\d+):([\d\.]+)", out)
+            if dur_m:
+                h, m, s = float(dur_m.group(1)), float(dur_m.group(2)), float(dur_m.group(3))
+                meta["duration_seconds"] = round(h * 3600 + m * 60 + s, 2)
+            sr_m = re.search(r"Audio:.*,\s*(\d+)\s*Hz", out)
+            if sr_m:
+                meta["sample_rate"] = int(sr_m.group(1))
+            ch_m = re.search(r"Audio:.*,\s*(mono|stereo|\d+\s*channels)", out)
+            if ch_m:
+                meta["channels"] = ch_m.group(1)
+        except Exception:
+            pass
+    return meta
+
+
 def convert_audio_if_needed(input_path: Path, target_format: str = "mp3") -> Tuple[Path, bool]:
     """
     Attempt to convert audio file to target format (mp3 or wav) using ffmpeg if installed.
@@ -94,6 +125,16 @@ class AudioHandler:
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+        meta = probe_audio_metadata(audio_path)
+        logger.info(
+            "[STAGE 1 - Raw Audio Received] format=%s, size=%d bytes, sample_rate=%s, duration=%s, channels=%s",
+            meta["format"],
+            meta["size_bytes"],
+            meta["sample_rate"],
+            meta["duration_seconds"],
+            meta["channels"],
+        )
+
         # Check for conversion if it's an ogg/opus file
         active_audio_path, converted = convert_audio_if_needed(audio_path, target_format="mp3")
 
@@ -128,7 +169,11 @@ class AudioHandler:
                         raw_transcript = (res_data.get("text") or "").strip()
                         if not raw_transcript:
                             raw_transcript = "[Inaudible / Empty audio]"
-                        logger.info("STT Transcription success (%d chars)", len(raw_transcript))
+                        logger.info(
+                            "[STAGE 2 - STT Transcript] text='%s', length=%d",
+                            raw_transcript,
+                            len(raw_transcript),
+                        )
                         return f"[Voice note transcript]: {raw_transcript}"
                     else:
                         err_text = resp.text[:150]

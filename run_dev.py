@@ -13,6 +13,15 @@ UVICORN = ROOT / ".venv" / "bin" / "uvicorn"
 if not UVICORN.exists():
     UVICORN = "uvicorn"
 
+# Load .env into os.environ
+env_file = ROOT / ".env"
+if env_file.exists():
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ[k.strip()] = v.strip().strip("'\"")
+
 
 def run():
     parser = argparse.ArgumentParser(description="Octapus Agents Dev Server Runner")

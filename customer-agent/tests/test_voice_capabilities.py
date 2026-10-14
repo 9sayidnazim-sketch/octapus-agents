@@ -173,23 +173,27 @@ def test_text_only_request_follows_preference(temp_db):
 # ==============================================================================
 def test_manglish_speech_sanitization_and_intent():
     """Verify intent detection and text sanitization for Manglish and Malayalam."""
-    # Intent recognition on variations
+    # Intent recognition on variations (including authentic Malayalam slang triggers)
     assert detect_voice_intent("voice aayi parayu")
     assert detect_voice_intent("audio ayakk")
     assert detect_voice_intent("read this aloud please")
     assert detect_voice_intent("reply in voice")
     assert detect_voice_intent("Sheri, audio-il parayu")
     assert detect_voice_intent("ഓഡിയോ അയക്കൂ")
+    assert detect_voice_intent("oru voice note tharu bro")
+    assert detect_voice_intent("voice note ayakk machane")
+    assert detect_voice_intent("audio-il parayoo aliya")
+    assert detect_voice_intent("വോയ്സ് നോട്ട് അയക്ക്")
 
     # False triggers avoided
     assert not detect_voice_intent("What is the price of your web package?")
     assert not detect_voice_intent("Does your company provide support?")
     assert not detect_voice_intent("We should talk about our project next week")
 
-    # clean_for_speech strips internal tags, markdown links, code, and accidental denials
+    # clean_for_speech strips internal tags, markdown links, code, emojis, and accidental denials
     raw = (
-        "[From Verified Management (971525919933)]: **Sheri**, sughamaano? "
-        "Visit [our website](https://octapus.ae). "
+        "[From Verified Management (971525919933)]: **Sheri**, sughamaano? 🔥 "
+        "Visit [our website](https://octapus.ae). 🚀 "
         "```print('code')``` "
         "I cannot generate audio. We are ready to help."
     )
@@ -199,6 +203,8 @@ def test_manglish_speech_sanitization_and_intent():
     assert "https://" not in cleaned
     assert "our website" in cleaned
     assert "```" not in cleaned
+    assert "🔥" not in cleaned
+    assert "🚀" not in cleaned
     assert "cannot generate audio" not in cleaned
     assert "Sheri, sughamaano?" in cleaned
 

@@ -282,6 +282,7 @@ def get_history(session_id: str, limit: int = 20, db_path: Optional[Path] = None
 def delete_last_message(session_id: str, db_path: Optional[Path] = None) -> bool:
     """Delete the most recent message in a session (used for rollbacks on API failure)."""
     conn = get_connection(db_path)
+    deleted = False
     with conn:
         cur = conn.execute(
             "SELECT id FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -294,10 +295,9 @@ def delete_last_message(session_id: str, db_path: Optional[Path] = None) -> bool
                 "UPDATE sessions SET message_count = MAX(0, message_count - 1), updated_at = ? WHERE id = ?",
                 (now_iso(), session_id),
             )
-            conn.close()
-            return True
+            deleted = True
     conn.close()
-    return False
+    return deleted
 
 
 def clear_session(session_id: str, db_path: Optional[Path] = None) -> bool:
